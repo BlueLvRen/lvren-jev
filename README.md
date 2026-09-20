@@ -7,6 +7,79 @@
 
 两者都通过官方 `typesafe-sdk` 调用 TypeSafe Jev，并在一个进程内复用同一个 `TypeSafeClient`。
 
+## 环境准备
+
+以下命令以 Windows PowerShell 为例。项目要求 Python 3.11 或更高版本，因为代码使用了内置 `tomllib` 和现代类型语法；运行 Playground 还需要可用的浏览器和网络连接。
+
+### 1. 获取项目
+
+如果尚未下载项目：
+
+```powershell
+cd C:\Project\4-Python
+git clone git@github.com:BlueLvRen/typedafe-jve.git typesafe_jev
+cd typesafe_jev
+```
+
+如果项目已经存在，只需进入目录：
+
+```powershell
+cd C:\Project\4-Python\typesafe_jev
+```
+
+### 2. 创建虚拟环境并安装依赖
+
+```powershell
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
+python -m pip install --upgrade pip
+python -m pip install typesafe-sdk
+```
+
+验证 SDK 可以导入：
+
+```powershell
+python -c "from typesafe_sdk import TypeSafeClient; print('typesafe-sdk ready')"
+```
+
+如果 PowerShell 阻止激活脚本，可以只对当前窗口放行后重新激活：
+
+```powershell
+Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
+.\.venv\Scripts\Activate.ps1
+```
+
+### 3. 创建本地 API Key 文件
+
+仓库中的 `typesafe.toml` 只保存地址、模型和 Profile，不保存 API Key。首次使用时，在项目目录创建 `typesafe.secrets.toml`：
+
+```powershell
+notepad .\typesafe.secrets.toml
+```
+
+填入以下内容，并将占位文本替换为官方 API Key：
+
+```toml
+[typesafe]
+api_key = "替换为你的 TypeSafe API Key"
+```
+
+如果要使用 `omnilabs` Profile，再创建 `typesafe.secrets.omnilabs.toml`，内容格式相同。两个密钥文件已被 `.gitignore` 忽略，禁止提交到 Git 或写入命令行参数、环境变量。
+
+### 4. 检查配置
+
+```powershell
+python -c "from typesafe_client import load_config; c=load_config(); print({'profile': c.profile, 'base_url': c.base_url, 'max_questions': c.max_questions})"
+```
+
+正常情况下会显示当前 Profile、服务地址和 `max_questions = 0`，不会输出 API Key。配置异常时，先检查 `typesafe.toml` 和对应的 `typesafe.secrets*.toml` 是否存在、格式是否正确。
+
+### 5. 运行测试
+
+```powershell
+python -m unittest discover -s . -p "test_*.py" -v
+```
+
 ## 配置
 
 主配置文件是 `typesafe.toml`，通过 Profile 区分不同来源：
