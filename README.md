@@ -7,6 +7,8 @@
 
 两者都通过官方 `typesafe-sdk` 调用 TypeSafe Jev，并在一个进程内复用同一个 `TypeSafeClient`。
 
+本项目采用 [MIT License](LICENSE)。`typesafe-sdk`、TypeSafe API 和 Jev 模型属于第三方服务或依赖，分别遵循其自身的许可证、服务条款和使用限制。
+
 ## 环境准备
 
 以下命令以 Windows PowerShell 为例。项目要求 Python 3.11 或更高版本，因为代码使用了内置 `tomllib` 和现代类型语法；运行 Playground 还需要可用的浏览器和网络连接。
