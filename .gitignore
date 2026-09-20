@@ -1,0 +1,13 @@
+# Local TypeSafe credentials
+typesafe.secrets.toml
+typesafe.secrets.*.toml
+
+# Python generated files
+__pycache__/
+*.py[cod]
+
+# Local tooling and test artifacts
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+

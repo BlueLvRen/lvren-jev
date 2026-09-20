@@ -1,0 +1,192 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Jev Primitives Playground</title>
+  <style>
+    :root { color-scheme: light; --bg: #f3f6fb; --panel: #ffffff; --line: #dbe3ef; --text: #172033; --muted: #637086; --accent: #2f6fed; --good: #16845b; --bad: #c63d4f; }
+    * { box-sizing: border-box; }
+    body { margin: 0; min-height: 100vh; background: radial-gradient(circle at top right, #e4edff, var(--bg) 48%); color: var(--text); font: 14px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif; }
+    main { width: min(1180px, calc(100% - 32px)); margin: 0 auto; padding: 32px 0 48px; }
+    h1 { margin: 0 0 6px; font-size: 30px; letter-spacing: -.02em; }
+    h2 { margin: 0 0 14px; font-size: 17px; }
+    p { color: var(--muted); }
+    .subtitle { margin: 0 0 24px; }
+    .panel { background: color-mix(in srgb, var(--panel) 96%, transparent); border: 1px solid var(--line); border-radius: 14px; padding: 20px; box-shadow: 0 12px 32px #6b7c991c; }
+    .state { margin-bottom: 16px; }
+    .grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
+    label { display: block; margin: 12px 0 6px; color: var(--muted); font-size: 12px; }
+    textarea, input { width: 100%; border: 1px solid #cbd6e5; border-radius: 8px; background: #fbfdff; color: var(--text); padding: 10px; font: 13px/1.45 ui-monospace, SFMono-Regular, Consolas, monospace; }
+    textarea:focus, input:focus { outline: 3px solid #2f6fed2b; border-color: var(--accent); }
+    textarea { min-height: 112px; resize: vertical; }
+    .state textarea { min-height: 128px; }
+    .primitive { border-top: 3px solid var(--accent); }
+    .primitive.score { border-top-color: #d69cff; }
+    .primitive.noul { border-top-color: var(--good); }
+    button { border: 0; border-radius: 8px; padding: 11px 17px; background: var(--accent); color: #ffffff; font-weight: 700; cursor: pointer; box-shadow: 0 4px 10px #2f6fed33; }
+    button:disabled { opacity: .55; cursor: wait; }
+    .actions { display: flex; align-items: center; gap: 14px; margin-top: 18px; }
+    #status { color: var(--muted); }
+    #status.error { color: var(--bad); }
+    #status.ok { color: var(--good); }
+    .timing { display: flex; flex-wrap: wrap; gap: 18px; margin: 18px 0; color: var(--muted); }
+    .timing strong { color: var(--text); font-size: 18px; }
+    .results { margin-top: 16px; }
+    .answer-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
+    .answer { background: #f8fafc; border: 1px solid var(--line); border-radius: 10px; padding: 14px; }
+    .answer h3 { margin: 0 0 8px; font-size: 14px; }
+    pre { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; color: #334155; }
+    .hint { font-size: 12px; }
+    @media (max-width: 850px) { .grid, .answer-grid { grid-template-columns: 1fr; } main { width: min(100% - 20px, 680px); padding-top: 20px; } }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>Jev Primitives Playground</h1>
+    <p class="subtitle">一次请求覆盖 Choice、Score、Noul，并分别显示浏览器总耗时与服务端 Jev 调用耗时。</p>
+
+    <section class="panel state">
+      <h2>State</h2>
+      <p class="hint">输入合法 JSON；如果不是 JSON，后端会将其作为普通文本处理。</p>
+      <textarea id="state">{
+  "message": "页面加载要 8 秒，用户一直在投诉，希望今天解决。",
+  "channel": "web"
+}</textarea>
+    </section>
+
+    <section class="grid">
+      <article class="panel primitive choice">
+        <h2>Choice · 分类选择</h2>
+        <label for="choice-instructions">Instructions</label>
+        <input id="choice-instructions" value="Which team should handle this request?">
+        <label for="choice-criteria">Criteria JSON</label>
+        <textarea id="choice-criteria">{
+  "billing": "Charges and payments",
+  "technical": "Software failures",
+  "other": "None of these"
+}</textarea>
+      </article>
+
+      <article class="panel primitive score">
+        <h2>Score · 有序评分</h2>
+        <label for="score-instructions">Instructions</label>
+        <input id="score-instructions" value="How urgent is this request?">
+        <label for="score-criteria">Criteria（每行一个等级，从低到高）</label>
+        <textarea id="score-criteria">Can wait
+This week
+Today</textarea>
+      </article>
+
+      <article class="panel primitive noul">
+        <h2>Noul · 是非判断</h2>
+        <label for="noul-instructions">Instructions</label>
+        <textarea id="noul-instructions">Does the sender request help today?</textarea>
+        <p class="hint">返回 0 到 1 的概率；0.5 表示不确定，不是“中等程度”。</p>
+      </article>
+    </section>
+
+    <div class="actions">
+      <button id="run">运行 Jev</button>
+      <span id="status">等待运行</span>
+    </div>
+
+    <section class="panel results">
+      <h2>Timing</h2>
+      <div class="timing">
+        <span>浏览器总耗时 <strong id="total-time">—</strong></span>
+        <span>服务端总耗时 <strong id="server-time">—</strong></span>
+        <span>Jev 请求 <strong id="jev-time">—</strong></span>
+        <span>准备/序列化 <strong id="local-time">—</strong></span>
+      </div>
+      <h2>Answers</h2>
+      <div id="answers" class="answer-grid"><p>运行后显示结果。</p></div>
+    </section>
+  </main>
+
+  <script>
+    const $ = (id) => document.getElementById(id);
+    const runButton = $("run");
+    const status = $("status");
+
+    function parseState(value) {
+      try { return JSON.parse(value); } catch (_) { return value; }
+    }
+
+    function buildPayload() {
+      let criteria;
+      try { criteria = JSON.parse($("choice-criteria").value); }
+      catch (_) { throw new Error("Choice 的 Criteria JSON 格式不正确"); }
+
+      const scoreCriteria = $("score-criteria").value
+        .split("\n").map((item) => item.trim()).filter(Boolean);
+      if (scoreCriteria.length < 2) throw new Error("Score 至少需要两个等级");
+
+      return {
+        state: parseState($("state").value),
+        questions: {
+          team: { type: "choice", instructions: $("choice-instructions").value, criteria },
+          urgency: { type: "score", instructions: $("score-instructions").value, criteria: scoreCriteria },
+          urgent: { type: "noul", instructions: $("noul-instructions").value }
+        }
+      };
+    }
+
+    function renderAnswers(answers) {
+      const container = $("answers");
+      container.replaceChildren();
+      Object.entries(answers || {}).forEach(([name, answer]) => {
+        const card = document.createElement("article");
+        card.className = "answer";
+        const title = document.createElement("h3");
+        title.textContent = name;
+        const value = document.createElement("pre");
+        value.textContent = JSON.stringify(answer, null, 2);
+        card.append(title, value);
+        container.append(card);
+      });
+    }
+
+    function errorMessage(data, status) {
+      if (data && data.error && typeof data.error === "object") {
+        return `[${data.error.code}] ${data.error.message}`;
+      }
+      return (data && data.error) || `HTTP ${status}`;
+    }
+
+    runButton.addEventListener("click", async () => {
+      let payload;
+      try { payload = buildPayload(); }
+      catch (error) { status.textContent = error.message; status.className = "error"; return; }
+
+      runButton.disabled = true;
+      status.textContent = "请求中…";
+      status.className = "";
+      const started = performance.now();
+      try {
+        const response = await fetch("/api/evaluate", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload)
+        });
+        const data = await response.json();
+        const totalMs = performance.now() - started;
+        $("total-time").textContent = `${totalMs.toFixed(0)} ms`;
+        const timing = data.timing || {};
+        $("server-time").textContent = timing.total_ms == null ? "—" : `${timing.total_ms} ms`;
+        $("jev-time").textContent = timing.jev_call_ms == null ? "—" : `${timing.jev_call_ms} ms`;
+        const localMs = (timing.config_ms || 0) + (timing.client_setup_ms || 0)
+          + (timing.question_build_ms || 0) + (timing.serialization_ms || 0);
+        $("local-time").textContent = `${localMs.toFixed(2)} ms`;
+        if (!response.ok) throw new Error(errorMessage(data, response.status));
+        renderAnswers(data.answers);
+        status.textContent = `完成 · ${data.profile || "default"} · ${data.model || "unknown"}`;
+        status.className = "ok";
+      } catch (error) {
+        status.textContent = error.message;
+        status.className = "error";
+      } finally { runButton.disabled = false; }
+    });
+  </script>
+</body>
+</html>
