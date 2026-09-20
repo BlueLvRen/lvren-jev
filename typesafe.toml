@@ -2,6 +2,10 @@
 [typesafe]
 default_profile = "official"
 
+# Local guard for one request; 0 disables the local question-count limit.
+[runtime]
+max_questions = 0
+
 [typesafe.profiles.official]
 api_key_file = "typesafe.secrets.toml"
 base_url = "https://api.typesafe.ai"

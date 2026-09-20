@@ -75,6 +75,33 @@ class JevPlaygroundTests(unittest.TestCase):
                 model="jev-test",
             ),
         )
+        self.assertEqual(config.max_questions, 0)
+
+    def test_load_config_reads_runtime_question_limit(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "typesafe.toml"
+            path.write_text(
+                '[typesafe]\napi_key = "key"\n'
+                'base_url = "https://example.test"\nmodel = "jev-test"\n'
+                '[runtime]\nmax_questions = 2\n',
+                encoding="utf-8",
+            )
+
+            config = load_config(path)
+
+        self.assertEqual(config.max_questions, 2)
+
+    def test_load_config_rejects_invalid_runtime_question_limit(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "typesafe.toml"
+            path.write_text(
+                '[typesafe]\napi_key = "key"\n'
+                '[runtime]\nmax_questions = -1\n',
+                encoding="utf-8",
+            )
+
+            with self.assertRaisesRegex(ValueError, "max_questions"):
+                load_config(path)
 
     def test_load_config_reads_api_key_from_referenced_file(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -171,6 +198,29 @@ class JevPlaygroundTests(unittest.TestCase):
         self.assertEqual(type(questions["team"]).__name__, "Choice")
         self.assertEqual(type(questions["urgency"]).__name__, "Score")
         self.assertEqual(type(questions["urgent"]).__name__, "Noul")
+
+    def test_build_questions_has_no_limit_when_max_questions_is_zero(self):
+        questions = build_questions(
+            {
+                f"question_{index}": {
+                    "type": "noul",
+                    "instructions": "Is this relevant?",
+                }
+                for index in range(33)
+            }
+        )
+
+        self.assertEqual(len(questions), 33)
+
+    def test_build_questions_applies_configured_question_limit(self):
+        with self.assertRaisesRegex(ValueError, "at most 1 questions"):
+            build_questions(
+                {
+                    "first": {"type": "noul", "instructions": "Is this first?"},
+                    "second": {"type": "noul", "instructions": "Is this second?"},
+                },
+                max_questions=1,
+            )
 
     def test_build_questions_rejects_empty_score_level(self):
         with self.assertRaisesRegex(ValueError, "non-empty strings"):

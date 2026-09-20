@@ -13,7 +13,7 @@ from typing import Any
 DEFAULT_CONFIG_PATH = Path(__file__).with_name("typesafe.toml")
 DEFAULT_BASE_URL = "https://api.typesafe.ai"
 DEFAULT_MODEL = "jev-latest"
-MAX_QUESTIONS = 32
+DEFAULT_MAX_QUESTIONS = 0
 
 
 @dataclass(frozen=True)
@@ -22,11 +22,25 @@ class TypeSafeConfig:
     base_url: str
     model: str
     profile: str = "default"
+    max_questions: int = DEFAULT_MAX_QUESTIONS
 
 
 def _read_toml(path: Path) -> dict[str, Any]:
     with path.open("rb") as config_file:
         return tomllib.load(config_file)
+
+
+def _read_max_questions(raw_config: Mapping[str, Any], config_path: Path) -> int:
+    runtime = raw_config.get("runtime", {})
+    if not isinstance(runtime, Mapping):
+        raise ValueError(f"[runtime] must be an object in {config_path}")
+
+    max_questions = runtime.get("max_questions", DEFAULT_MAX_QUESTIONS)
+    if isinstance(max_questions, bool) or not isinstance(max_questions, int) or max_questions < 0:
+        raise ValueError(
+            f"[runtime].max_questions must be a non-negative integer in {config_path}"
+        )
+    return max_questions
 
 
 def _read_api_key(config_path: Path, typesafe: Mapping[str, Any]) -> str | None:
@@ -97,6 +111,7 @@ def load_config(
         )
 
     raw_config = _read_toml(config_path)
+    max_questions = _read_max_questions(raw_config, config_path)
     typesafe = raw_config.get("typesafe")
     if not isinstance(typesafe, Mapping):
         raise ValueError(f"Missing [typesafe] section in {config_path}")
@@ -120,6 +135,7 @@ def load_config(
         base_url=base_url.strip().rstrip("/"),
         model=model.strip(),
         profile=selected_profile,
+        max_questions=max_questions,
     )
 
 
@@ -155,11 +171,17 @@ def _validate_criteria_value(name: str, value: Any) -> None:
         raise ValueError(f"question '{name}' criteria values must be JSON-compatible")
 
 
-def build_questions(specs: Mapping[str, Mapping[str, Any]]) -> dict[str, Any]:
+def build_questions(
+    specs: Mapping[str, Mapping[str, Any]],
+    *,
+    max_questions: int = DEFAULT_MAX_QUESTIONS,
+) -> dict[str, Any]:
     if not isinstance(specs, Mapping) or not specs:
         raise ValueError("questions must be a non-empty object")
-    if len(specs) > MAX_QUESTIONS:
-        raise ValueError(f"a request can contain at most {MAX_QUESTIONS} questions")
+    if isinstance(max_questions, bool) or not isinstance(max_questions, int) or max_questions < 0:
+        raise ValueError("max_questions must be a non-negative integer")
+    if max_questions > 0 and len(specs) > max_questions:
+        raise ValueError(f"a request can contain at most {max_questions} questions")
 
     from typesafe_sdk import Choice, Noul, Score
 
@@ -294,14 +316,17 @@ def evaluate_request(
     state = payload.get("state")
     _validate_state(state)
 
-    questions_started = time.perf_counter_ns()
-    questions = build_questions(payload.get("questions", {}))
-    questions_ms = round((time.perf_counter_ns() - questions_started) / 1_000_000, 2)
-
     config_started = time.perf_counter_ns()
     resolved_config = config or load_config()
     resolved_model = model or resolved_config.model
     config_ms = round((time.perf_counter_ns() - config_started) / 1_000_000, 2)
+
+    questions_started = time.perf_counter_ns()
+    questions = build_questions(
+        payload.get("questions", {}),
+        max_questions=resolved_config.max_questions,
+    )
+    questions_ms = round((time.perf_counter_ns() - questions_started) / 1_000_000, 2)
 
     owns_client = client is None
     client_started = time.perf_counter_ns()

@@ -26,6 +26,15 @@ base_url = "https://omnilabs.vibeadmin.cn"
 model = "jev-1.13.0"
 ```
 
+本地问题数量保护在 `[runtime]` 中配置：
+
+```toml
+[runtime]
+max_questions = 0
+```
+
+`0` 表示不启用本地数量限制；设置为正整数时，超过该数量的问题会在调用 Jev 前被拒绝。该配置只是本地保护，不代表 Jev 官方服务端限制。
+
 每个 Profile 的 API Key 位于同级独立密钥文件。例如官方 Profile：
 
 ```toml
@@ -125,6 +134,7 @@ INTERNAL_ERROR
 
 - State 必须是字符串、数组或 JSON 对象。
 - Questions 必须是非空对象。
+- `[runtime].max_questions` 默认为 `0`；大于 `0` 时限制单次本地请求的问题数量。
 - 每个问题必须有非空 Instructions。
 - Choice Criteria 必须有非空标签，标签不能重复。
 - Score 至少有两个等级，等级必须非空且不能重复。
