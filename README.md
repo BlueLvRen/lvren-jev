@@ -4,13 +4,49 @@
 
 从 0.2.0 开始，本仓库同时提供可被其他业务软件依赖的通用语义决策包。业务方只需要准备一个 YAML/JSON 决策定义，并自行负责 Excel、数据库或 HTTP 等输入输出适配；通用包不包含任何业务文件处理逻辑。
 
-安装：
+### 安装
+
+PyPI 包名和 Python 导入名不同：
+
+- 安装包名：`lvren-jev`
+- 导入名：`lvren_jev`
+
+从 PyPI 安装：
 
 ```powershell
-python -m pip install .
+python -m pip install lvren-jev
 ```
 
-最小调用链：
+从本地构建的 wheel 安装：
+
+```powershell
+python -m pip install .\dist\lvren_jev-0.2.0-py3-none-any.whl
+```
+
+### 最小使用教程
+
+先准备配置文件 `typesafe.toml`：
+
+```toml
+[typesafe]
+api_key_file = "typesafe.secrets.toml"
+base_url = "https://api.typesafe.ai"
+model = "jev-1.13.0"
+
+[runtime]
+timeout = 30
+retry = 1
+cache = false
+```
+
+在同目录创建 `typesafe.secrets.toml`：
+
+```toml
+[typesafe]
+api_key = "替换为你的 API Key"
+```
+
+然后在业务代码中导入 `lvren_jev`：
 
 ```python
 from lvren_jev import (
@@ -30,7 +66,11 @@ print(result.confidence)  # 0 到 1
 print(result.fallback)    # 是否因低置信度进入待确认
 ```
 
-决策文件示例见 [`examples/worklog_classifier/worklog.yaml`](examples/worklog_classifier/worklog.yaml)。生产环境的 `DecisionDefinition` 应由配置文件加载；单元测试可以直接构造 `DecisionDefinition` 并注入 Fake Runtime。
+其中 `worklog.yaml` 是业务方自己的决策定义文件，最小结构可参考 [`examples/worklog_classifier/worklog.yaml`](examples/worklog_classifier/worklog.yaml)。
+
+不建议把真实 API Key 提交到 Git。更安全的做法是使用 `api_key_file`，详见[配置](#配置)。
+
+生产环境的 `DecisionDefinition` 应由配置文件加载；单元测试可以直接构造 `DecisionDefinition` 并注入 Fake Runtime。
 
 通用层公开对象的关系是：
 
