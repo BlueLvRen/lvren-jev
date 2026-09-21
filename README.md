@@ -1,5 +1,49 @@
 # Jev 本地 Playground 与 CLI
 
+## 通用决策库
+
+从 0.2.0 开始，本仓库同时提供可被其他业务软件依赖的通用语义决策包。业务方只需要准备一个 YAML/JSON 决策定义，并自行负责 Excel、数据库或 HTTP 等输入输出适配；通用包不包含任何业务文件处理逻辑。
+
+安装：
+
+```powershell
+python -m pip install .
+```
+
+最小调用链：
+
+```python
+from typesafe_jev import (
+    JevRuntime,
+    SemanticClassifier,
+    load_decision_definition,
+)
+
+definition = load_decision_definition("worklog.yaml")
+runtime = JevRuntime.from_config("typesafe.toml")
+classifier = SemanticClassifier.from_definition(definition, runtime=runtime)
+
+result = classifier.classify("处理生产 Redis 连接异常")
+print(result.value)       # 稳定的程序 ID，例如 operations
+print(result.label)       # 展示名称，例如 运维
+print(result.confidence)  # 0 到 1
+print(result.fallback)    # 是否因低置信度进入待确认
+```
+
+决策文件示例见 [`examples/worklog_classifier/worklog.yaml`](examples/worklog_classifier/worklog.yaml)。生产环境的 `DecisionDefinition` 应由配置文件加载；单元测试可以直接构造 `DecisionDefinition` 并注入 Fake Runtime。
+
+通用层公开对象的关系是：
+
+```text
+YAML/JSON
+  -> DecisionDefinition
+  -> SemanticClassifier
+  -> JevRuntime
+  -> ClassificationResult
+```
+
+`JevRuntime` 提供可复用的客户端调用、超时、重试、缓存、响应标准化和基础 telemetry；配置错误、调用错误和低置信度回退分别有独立行为。邮件、工时、工单等业务只需替换决策文件和业务适配器，不需要修改通用分类器。
+
 这个目录提供两个入口：
 
 - `typesafe_playground.py`：启动明亮主题的浏览器 Playground。

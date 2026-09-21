@@ -1,0 +1,28 @@
+version: 1
+kind: classifier
+name: worklog_classifier
+
+input:
+  type: text
+  field: description
+  instructions: Classify the work description into the category that best matches it.
+
+categories:
+  operations:
+    label: 运维
+    description: 生产维护、故障处理、监控、巡检、告警和基础设施问题
+  development:
+    label: 开发
+    description: 功能开发、代码修改、接口开发、页面开发和缺陷修复
+  deployment:
+    label: 部署
+    description: 发布、上线、安装、部署、环境升级和配置变更
+  other:
+    label: 其他
+    description: 不属于以上类别的工作
+
+policy:
+  threshold: 0.65
+  fallback:
+    value: pending_review
+    label: 待确认
