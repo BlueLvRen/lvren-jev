@@ -1,8 +1,10 @@
-# Jev 本地 Playground 与 CLI
+# lvren-jev：基于 Jev 的文本分类库
 
 ## 通用决策库
 
-从 0.2.0 开始，本仓库同时提供可被其他业务软件依赖的通用语义决策包。业务方只需要准备一个 YAML/JSON 决策定义，并自行负责 Excel、数据库或 HTTP 等输入输出适配；通用包不包含任何业务文件处理逻辑。
+`lvren-jev` 将一段文本交给 TypeSafe Jev，根据你定义的类别返回分类结果、置信度和各类别概率。例如，将“处理生产 Redis 连接异常”归为“运维”，用于自动填写 Excel 工时类型、分派工单或分类邮件。
+
+你通过 YAML/JSON 文件描述类别及其含义，通过 Python API 执行分类；Excel、数据库或 HTTP 的读写由业务代码负责。仓库还提供用于调试请求的浏览器 Playground 和 CLI。
 
 ### 安装
 
@@ -11,21 +13,39 @@ PyPI 包名和 Python 导入名不同：
 - 安装包名：`lvren-jev`
 - 导入名：`lvren_jev`
 
-从 PyPI 安装：
+需要 Python 3.11 或更高版本，以及可用的 TypeSafe API Key 和网络连接。以下命令以 Windows PowerShell 为例。
+
+从 PyPI 安装（无需下载仓库）：
 
 ```powershell
 python -m pip install lvren-jev
 ```
 
-从本地构建的 wheel 安装：
+如果要从源码构建 wheel，先[获取项目](#1-获取项目)，然后在仓库根目录执行：
 
 ```powershell
+python -m pip install build
+python -m build --wheel
+# dist 下会生成 lvren_jev-<版本号>-py3-none-any.whl，使用实际生成的文件路径安装。
 python -m pip install .\dist\lvren_jev-0.2.0-py3-none-any.whl
 ```
 
 ### 最小使用教程
 
-先准备配置文件 `typesafe.toml`：
+以填写 Excel 工时类型为例：`工时.xlsx` 的 `sheet1` 第一行是表头，A 列是工时内容，B 列用于写入工时类型。从第二行开始逐行分类，跳过空内容，完成后保存并关闭文件。
+
+| 行 | A 列：工时内容 | B 列：工时类型（示意结果） |
+| --- | --- | --- |
+| 2 | 处理生产 Redis 连接异常 | 运维 |
+| 3 | 开发用户导出接口 | 开发 |
+
+先在业务脚本的工作目录准备三个文件：
+
+- `worklog.yaml`：告诉 Jev 有哪些工时类型、每个类型的含义，以及低置信度时如何处理。将[下文的 YAML](#worklogyaml业务决策定义)保存为此文件，或复制仓库的 [`worklog.yaml`](examples/worklog_classifier/worklog.yaml) 示例。
+- `typesafe.toml`：告诉运行时使用哪个服务、模型及请求参数。
+- `typesafe.secrets.toml`：保存你的 API Key。
+
+`typesafe.toml` 内容：
 
 ```toml
 [typesafe]
@@ -46,31 +66,69 @@ cache = false
 api_key = "替换为你的 API Key"
 ```
 
-然后在业务代码中导入 `lvren_jev`：
+下面展示完整的业务调用流程。`business_excel` 是你自己的 Excel 适配模块占位名，**不由本包提供**；示例省略其实现，只约定各方法的输入输出。接入已有 Excel 读写代码后即可运行。示例会覆盖非空 A 列所在行的 B 列，并在全部分类成功后保存原文件；任一行失败则不执行保存，但仍关闭文件。
 
 ```python
 from lvren_jev import (
+    ClassificationResult,
     JevRuntime,
     SemanticClassifier,
     load_decision_definition,
 )
 
-definition = load_decision_definition("worklog.yaml")
-runtime = JevRuntime.from_config("typesafe.toml")
-classifier = SemanticClassifier.from_definition(definition, runtime=runtime)
+# 业务方提供的 Excel 操作，输入输出见下方调用处注释。
+from business_excel import (
+    open_workbook,
+    iter_work_descriptions,
+    write_work_type,
+    save_workbook,
+    close_workbook,
+)
 
-result = classifier.classify("处理生产 Redis 连接异常")
-print(result.value)       # 稳定的程序 ID，例如 operations
-print(result.label)       # 展示名称，例如 运维
-print(result.confidence)  # 0 到 1
-print(result.fallback)    # 是否因低置信度进入待确认
+
+def get_work_type_name(result: ClassificationResult) -> str:
+    # 输入：分类结果，例如 value="operations", label="运维", fallback=False。
+    # 输出：写入 B 列的名称，例如 "运维"；低置信度时为 "待确认"。
+    return result.label
+
+
+# 加载类别及策略，返回 DecisionDefinition；该文件不是 Excel 数据文件。
+definition = load_decision_definition("worklog.yaml")
+
+# JevRuntime 读取连接配置并管理客户端；退出 with 时关闭客户端。
+# 整个文件复用一个运行时和分类器，无需每行重新创建。
+with JevRuntime.from_config("typesafe.toml") as runtime:
+    # SemanticClassifier 将类别定义和运行时组合成可调用的文本分类器。
+    classifier = SemanticClassifier.from_definition(definition, runtime=runtime)
+
+    # 输入：文件路径；输出：业务方 Excel 库的工作簿对象。
+    workbook = open_workbook("工时.xlsx")
+    try:
+        # 输入：工作簿、工作表名和起始行；读取 A 列，跳过空内容。
+        # 输出：逐个 (行号, 文本)，例如 (2, "处理生产 Redis 连接异常")。
+        for row_number, description in iter_work_descriptions(
+            workbook, sheet_name="sheet1", start_row=2
+        ):
+            # 输入：单条工时文本 str；内部调用 Jev，输出 ClassificationResult。
+            # 示意：value="operations", label="运维", confidence=0.91,
+            # probabilities={"operations": 0.91, "development": 0.09}。
+            result = classifier.classify(description)
+            work_type = get_work_type_name(result)
+
+            # 输入：工作簿、工作表、行号和类型名称；将名称写入该行 B 列。
+            # 例如第 2 行写入 "运维"；无返回值。
+            write_work_type(workbook, "sheet1", row_number, work_type)
+
+        # 输入：工作簿；保存到原文件，无返回值。
+        save_workbook(workbook)
+    finally:
+        # 输入：工作簿；释放文件资源，不隐式保存，无返回值。
+        close_workbook(workbook)
 ```
 
-其中 `worklog.yaml` 是业务方自己的决策定义文件，最小结构可参考 [`examples/worklog_classifier/worklog.yaml`](examples/worklog_classifier/worklog.yaml)。
+`classify()` 已经将 Jev 选中的类别转换为结果中的 `value` 和 `label`，并应用配置中的置信度阈值。业务方法 `get_work_type_name()` 只提取最终名称，不再发起请求或重新计算概率。置信度低于 `policy.threshold` 时，结果会改为配置的“待确认”；`probabilities` 保留各类别概率，便于业务方复核。这里的结果和概率均为示意，实际由 Jev 返回。
 
 不建议把真实 API Key 提交到 Git。更安全的做法是使用 `api_key_file`，详见[配置](#配置)。
-
-生产环境的 `DecisionDefinition` 应由配置文件加载；单元测试可以直接构造 `DecisionDefinition` 并注入 Fake Runtime。
 
 通用层公开对象的关系是：
 
@@ -217,7 +275,9 @@ print(result.to_dict())
 - `probabilities`：各分类的概率。
 - `fallback`：是否因置信度低于阈值进入待确认状态。
 
-这个目录提供两个入口：
+## Playground 与 CLI
+
+除 Python 包外，源码仓库还提供两个调试入口，以下命令均在仓库根目录执行：
 
 - `typesafe_playground.py`：启动明亮主题的浏览器 Playground。
 - `typesafe_cli.py`：供 Codex 或其他本地脚本调用，输出 JSON。
@@ -235,16 +295,11 @@ print(result.to_dict())
 如果尚未下载项目：
 
 ```powershell
-cd C:\Project\4-Python
-git clone git@github.com:BlueLvRen/lvren-jev.git lvren_jev
+git clone https://github.com/BlueLvRen/lvren-jev.git lvren_jev
 cd lvren_jev
 ```
 
-如果项目已经存在，只需进入目录：
-
-```powershell
-cd C:\Project\4-Python\lvren_jev
-```
+如果项目已经存在，进入你本地的仓库根目录即可。
 
 ### 2. 创建虚拟环境并安装依赖
 
@@ -252,7 +307,7 @@ cd C:\Project\4-Python\lvren_jev
 python -m venv .venv
 .\.venv\Scripts\Activate.ps1
 python -m pip install --upgrade pip
-python -m pip install typesafe-sdk
+python -m pip install -e .
 ```
 
 验证 SDK 可以导入：
@@ -283,7 +338,7 @@ notepad .\typesafe.secrets.toml
 api_key = "替换为你的 TypeSafe API Key"
 ```
 
-如果要使用 `omnilabs` Profile，再创建 `typesafe.secrets.omnilabs.toml`，内容格式相同。两个密钥文件已被 `.gitignore` 忽略，禁止提交到 Git 或写入命令行参数、环境变量。
+如果配置了其他 Profile，为其创建对应的密钥文件，内容格式相同。仓库已忽略 `typesafe.secrets.toml` 和 `typesafe.secrets.*.toml`；请勿提交真实密钥。
 
 ### 4. 检查配置
 
@@ -312,10 +367,6 @@ api_key_file = "typesafe.secrets.toml"
 base_url = "https://api.typesafe.ai"
 model = "jev-1.13.0"
 
-[typesafe.profiles.omnilabs]
-api_key_file = "typesafe.secrets.omnilabs.toml"
-base_url = "https://omnilabs.vibeadmin.cn"
-model = "jev-1.13.0"
 ```
 
 本地问题数量保护在 `[runtime]` 中配置：
@@ -334,20 +385,20 @@ max_questions = 0
 api_key = "替换为你的 API Key"
 ```
 
-`typesafe.secrets.toml` 和 `typesafe.secrets.*.toml` 已加入 `.gitignore`。两组旧配置已分别迁移到 `official` 和 `omnilabs` Profile。由于旧 Key 曾以明文保存，建议登录 TypeSafe Console 后分别撤销旧 Key 并创建新 Key，再只替换对应密钥文件中的值。
+`typesafe.secrets.toml` 和 `typesafe.secrets.*.toml` 已加入仓库的 `.gitignore`。在自己的项目中使用时，也应将密钥文件加入忽略规则。要增加其他来源，可新增 `[typesafe.profiles.<名称>]`，填写对应地址、模型和密钥文件路径，再通过 `--profile <名称>` 选择。
 
 ## 启动 Playground
 
-在 `C:\Project\4-Python` 下执行：
+在仓库根目录执行：
 
 ```powershell
-python lvren_jev\typesafe_playground.py
+python .\typesafe_playground.py
 ```
 
-切换来源启动：
+显式选择已配置的来源启动：
 
 ```powershell
-python lvren_jev\typesafe_playground.py --profile omnilabs
+python .\typesafe_playground.py --profile official
 ```
 
 浏览器打开：
@@ -370,7 +421,7 @@ http://127.0.0.1:8765
 直接传 JSON：
 
 ```powershell
-python lvren_jev\typesafe_cli.py `
+python .\typesafe_cli.py `
   --state '{"message":"页面加载要 8 秒，用户希望今天解决。","channel":"web"}' `
   --questions '{"team":{"type":"choice","instructions":"Which team should handle this request?","criteria":{"billing":"Charges and payments","technical":"Software failures","other":"None of these"}},"urgency":{"type":"score","instructions":"How urgent is this request?","criteria":["Can wait","This week","Today"]},"urgent":{"type":"noul","instructions":"Does the sender request help today?"}}' `
   --pretty
@@ -379,7 +430,7 @@ python lvren_jev\typesafe_cli.py `
 也可以从文件读取：
 
 ```powershell
-python lvren_jev\typesafe_cli.py `
+python .\typesafe_cli.py `
   --state-file state.json `
   --questions-file questions.json `
   --profile official `
