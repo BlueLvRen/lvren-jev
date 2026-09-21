@@ -292,7 +292,9 @@ print(result.to_dict())
 | `JevRuntime.execute()` | 支持 | 支持 | 支持 |
 | `JevResponse.answers` | 返回原始答案 | 返回原始答案 | 返回原始答案 |
 | `SemanticClassifier.classify()` | 已适配 | 未适配 | 未适配 |
-| `ClassificationResult` | 表示一个 Choice 结果 | 不适用 | 不适用 |
+| `ScoreEvaluator.evaluate()` | 不适用 | 已适配 | 不适用 |
+| `NoulEvaluator.evaluate()` | 不适用 | 不适用 | 已适配 |
+| 结果类型 | `ClassificationResult` | `ScoreResult` | `NoulResult` |
 
 `JevRuntime` 使用通用的 `DecisionRequest`，可以在一次请求中组合三种原语：
 
@@ -342,7 +344,29 @@ runtime.close()
 - `Score`：`criteria` 是从低到高排列的描述数组；返回 `score`、`confidence`、`legend` 和 `probabilities`。`score` 可以是小数。
 - `Noul`：`criteria` 可选，描述 `true` 和 `false`；返回 `noul`，范围为 `0` 到 `1`，表示回答为“是”的概率。Noul 没有单独的 `confidence` 字段。
 
-因此，当前如果使用 Score 或 Noul，应直接读取 `JevResponse.answers`；只有固定类别分类场景才使用更高层的 `SemanticClassifier` 和 `ClassificationResult`。
+如果只需要一次请求执行多个不同原语，仍可直接使用 `JevRuntime.execute()`；如果每次只处理一种原语，推荐使用统一包装模块中的对应类：
+
+```python
+from lvren_jev import NoulEvaluator, ScoreEvaluator
+
+score_evaluator = ScoreEvaluator(
+    name="risk_score",
+    criteria=["0 = low", "5 = high"],
+    runtime=runtime,
+)
+score = score_evaluator.evaluate({"message": "Repeated payment failures"})
+print(score.score, score.confidence)
+
+noul_evaluator = NoulEvaluator(
+    name="needs_review",
+    criteria="Determine whether this case requires human review.",
+    runtime=runtime,
+)
+needs_review = noul_evaluator.evaluate({"message": "Suspicious transaction"})
+print(needs_review.probability, needs_review.is_true())
+```
+
+三个原语包装类都位于 `lvren_jev.decision` 模块，并且共享同一个 `JevRuntime`。固定类别分类使用 `SemanticClassifier`，评分使用 `ScoreEvaluator`，真假概率判断使用 `NoulEvaluator`。
 
 ## Playground 与 CLI
 

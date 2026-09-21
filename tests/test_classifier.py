@@ -89,6 +89,17 @@ class SemanticClassifierTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "unknown category"):
             classifier.classify("bad response")
 
+    def test_accepts_legacy_string_choice_answer(self):
+        runtime = FakeRuntime({"answers": {"ticket_classifier": "incident"}})
+        classifier = SemanticClassifier.from_definition(
+            make_definition(threshold=0),
+            runtime=runtime,
+        )
+
+        result = classifier.classify("Production failure")
+
+        self.assertEqual(result.value, "incident")
+
 
 if __name__ == "__main__":
     unittest.main()

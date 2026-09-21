@@ -5,6 +5,9 @@ typesafe.secrets.*.toml
 # Python generated files
 __pycache__/
 *.py[cod]
+build/
+dist/
+*.egg-info/
 
 # Local tooling and test artifacts
 .pytest_cache/
