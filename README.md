@@ -100,7 +100,7 @@ typesafe.toml
   -> JevResponse
 ```
 
-测试脚本中的 `FakeTypeSafeClient` 只用于离线测试。它临时替换真实客户端，测试结束后立即恢复；业务代码不需要写这部分替换逻辑。
+测试脚本中的 `FakeJevApiHandler` 只模拟本地 HTTP 服务端响应；客户端仍然使用真实的 `typesafe_sdk.TypeSafeClient`。业务代码不需要写这部分模拟逻辑。
 
 这个目录提供两个入口：
 
