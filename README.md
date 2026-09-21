@@ -84,6 +84,24 @@ YAML/JSON
 
 `JevRuntime` 提供可复用的客户端调用、超时、重试、缓存、响应标准化和基础 telemetry；配置错误、调用错误和低置信度回退分别有独立行为。邮件、工时、工单等业务只需替换决策文件和业务适配器，不需要修改通用分类器。
 
+正式使用时不需要手动创建或替换 `TypeSafeClient`。下面这行会读取配置，并自动创建真实的官方 SDK 客户端：
+
+```python
+runtime = JevRuntime.from_config("typesafe.toml")
+```
+
+调用链是：
+
+```text
+typesafe.toml
+  -> JevRuntime.from_config()
+  -> typesafe_sdk.TypeSafeClient
+  -> TypeSafeClient.system_one()
+  -> JevResponse
+```
+
+测试脚本中的 `FakeTypeSafeClient` 只用于离线测试。它临时替换真实客户端，测试结束后立即恢复；业务代码不需要写这部分替换逻辑。
+
 这个目录提供两个入口：
 
 - `typesafe_playground.py`：启动明亮主题的浏览器 Playground。
