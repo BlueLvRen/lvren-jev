@@ -9,6 +9,7 @@ from .errors import DefinitionError, JevRuntimeError, TypesafeJevError
 from .loader import load_decision_definition
 from .results import ClassificationResult
 from .runtime import DecisionRequest, JevResponse, JevRuntime, normalize_response
+from ._version import __version__
 
 __all__ = [
     "CategoryDefinition",
@@ -26,5 +27,3 @@ __all__ = [
     "load_decision_definition",
     "normalize_response",
 ]
-
-__version__ = "0.2.0"

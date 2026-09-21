@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "typesafe-jev"
-version = "0.2.0"
+dynamic = ["version"]
 description = "Business-neutral semantic decision runtime for TypeSafe Jev"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -19,3 +19,6 @@ where = ["src"]
 
 [tool.setuptools.package-dir]
 "" = "src"
+
+[tool.setuptools.dynamic]
+version = {attr = "typesafe_jev._version.__version__"}
