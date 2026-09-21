@@ -87,7 +87,7 @@ from business_excel import (
 
 
 def get_work_type_name(result: ClassificationResult) -> str:
-    # 输入：分类结果，例如 value="operations", label="运维", fallback=False。
+    # 输入：ClassificationResult 对象，完整结构见下方 classify() 调用处。
     # 输出：写入 B 列的名称，例如 "运维"；低置信度时为 "待确认"。
     return result.label
 
@@ -109,9 +109,18 @@ with JevRuntime.from_config("typesafe.toml") as runtime:
         for row_number, description in iter_work_descriptions(
             workbook, sheet_name="sheet1", start_row=2
         ):
-            # 输入：单条工时文本 str；内部调用 Jev，输出 ClassificationResult。
-            # 示意：value="operations", label="运维", confidence=0.91,
-            # probabilities={"operations": 0.91, "development": 0.09}。
+            # 输入：单条工时文本 str；内部调用 Jev，返回 ClassificationResult 对象。
+            # 返回对象示意（实际内容由 Jev 返回，并经过分类策略处理）：
+            # ClassificationResult(
+            #     value="operations",       # 稳定的类别 ID，用于程序判断和保存
+            #     label="运维",             # 展示名称，用于填写 Excel 的 B 列
+            #     confidence=0.91,          # 置信度，范围为 0 到 1
+            #     probabilities={          # 各类别的概率；未提供时为 None
+            #         "operations": 0.91,
+            #         "development": 0.09,
+            #     },
+            #     fallback=False,          # True 表示已按低置信度策略回退
+            # )
             result = classifier.classify(description)
             work_type = get_work_type_name(result)
 
@@ -247,7 +256,7 @@ cache = false
 | `SemanticClassifier` | `classify(text: str)` | `ClassificationResult` |
 | `JevRuntime` | `DecisionRequest`，包含 `state` 和 `questions` | `JevResponse`，包含 `answers`、`usage`、`model` |
 
-分类结果示例：
+`classify()` 返回的是 `ClassificationResult` 对象，使用 `result.label` 等属性读取字段；调用 `result.to_dict()` 才会转换为字典，使用 `result.to_dict()["label"]` 等方式读取。转换示例：
 
 ```python
 result = classifier.classify("处理生产 Redis 连接异常")
