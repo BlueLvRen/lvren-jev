@@ -701,39 +701,6 @@ python -m build --wheel
 python -m pip install .\dist\lvren_jev-0.2.0-py3-none-any.whl
 ```
 
-## 本地发布程序
-
-仓库提供独立的 `lvren-jev-release` 业务入口。它把一次完整发布作为委派边界：程序锁定目标 commit，找到可达的上一个 SemVer 发布 tag，读取全部提交正文和未截断的实际 diff，再通过两层 Jev 判断决定“是否适合发布”和最高 SemVer 级别。决策定义位于 `src/lvren_jev/release/definitions/`，运行配置仍由 `JevRuntime` 管理，发布流程不改变通用决策原语。
-
-先安装构建与上传工具，并准备一个只在真正上传步骤读取的 PyPI token 文件：
-
-```powershell
-python -m pip install build twine
-```
-
-只预览，不修改版本、提交、构建、上传或创建 tag：
-
-```powershell
-lvren-jev-release preview `
-  --repo . `
-  --runtime-config .\typesafe.toml `
-  --target HEAD
-```
-
-真正执行完整发布时，显式使用 `publish` 并提供 token 文件路径。程序不会把 token 放进命令行，也不会打印或写入日志；用户名通过 `TWINE_USERNAME=__token__` 传给 Twine：
-
-```powershell
-lvren-jev-release publish `
-  --repo . `
-  --runtime-config .\typesafe.toml `
-  --token-file 'C:\path\to\pypi-token' `
-  --target HEAD
-```
-
-发布流程依次执行版本源修改、完整测试、独立 release 提交、wheel/sdist 构建、`twine check`、wheel 安装导入验证、分支推送、仅上传本版本两个产物、tag 创建与推送、PyPI SHA256 核对及从 PyPI 安装导入验证。任何步骤失败都会停止后续动作，并在 JSON 结果中返回 `failed_step`、`completed_actions` 和 `remote_state`；例如 PyPI 已上传但 tag 推送失败时不会假装成功，也不会自动递增版本重试。
-
-安全边界：工作区不干净、没有可识别发布 tag、没有变更、diff 超过证据上限、Jev 低置信度/模糊、版本已存在于 Git 或 PyPI，都会结构化拒绝并保持发布零副作用。离线验收应使用临时 Git 仓库、假 Jev runtime 和假发布动作；本项目实现验收不读取真实 token，不上传 PyPI，不创建或推送真实发布 tag。
-
 ## 许可证
 
 本项目采用 [MIT License](LICENSE)。你可以自由使用、复制、修改和分发本项目，包括用于商业项目；使用时请保留版权和许可证声明。项目按现状提供，不附带任何担保。
