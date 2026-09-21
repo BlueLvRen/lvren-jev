@@ -100,6 +100,123 @@ typesafe.toml
   -> JevResponse
 ```
 
+## 配置和数据格式
+
+### `worklog.yaml`：业务决策定义
+
+`worklog.yaml` 描述“要分什么类别”以及每个类别的含义。它属于业务层，由业务方维护；通用包只负责加载和执行，不关心数据来自 Excel、数据库还是 HTTP。
+
+最小结构：
+
+```yaml
+version: 1
+kind: classifier
+name: worklog_classifier
+
+input:
+  type: text
+  field: description
+  instructions: Classify the work description into the category that best matches it.
+
+categories:
+  operations:
+    label: 运维
+    description: 生产维护、故障处理、监控和基础设施问题
+  development:
+    label: 开发
+    description: 功能开发、代码修改和缺陷修复
+
+policy:
+  threshold: 0.65
+  fallback:
+    value: pending_review
+    label: 待确认
+```
+
+字段含义：
+
+- `name`：问题名称，也是返回答案中的问题标识。
+- `input.field`：输入文本在 `state` 中使用的字段名。
+- `categories`：程序值、展示名称和分类说明。程序值如 `operations` 应保持稳定。
+- `policy.threshold`：低于此置信度时使用 `fallback`。
+
+### `typesafe.toml`：通用运行时配置
+
+通用包最简单的配置形式如下：
+
+```toml
+[typesafe]
+api_key_file = "typesafe.secrets.toml"
+base_url = "https://api.typesafe.ai"
+model = "jev-1.13.0"
+
+[runtime]
+timeout = 30
+retry = 1
+cache = false
+```
+
+配置含义：
+
+- `[typesafe]`：API 地址和模型配置。
+- `api_key_file`：相对于 `typesafe.toml` 的密钥文件路径。
+- `base_url`：TypeSafe API 地址。
+- `model`：使用的 Jev 模型。
+- `[runtime].timeout`：单次请求超时时间，单位为秒。
+- `[runtime].retry`：运行时对可重试连接错误的重试次数。
+- `[runtime].cache`：是否启用相同请求的进程内缓存。
+
+`typesafe.toml` 中也可以使用 `default_profile` 和 `typesafe.profiles.<name>` 管理多个 API 来源，详见[配置](#配置)。
+
+注意：`max_questions` 是 Playground/CLI 的本地问题数量保护配置，不是通用 `JevRuntime` 的运行时字段；通用包使用上面的 `timeout`、`retry` 和 `cache`。
+
+### 分层输入和输出
+
+```text
+业务输入文本: str
+  -> SemanticClassifier.classify(text)
+  -> DecisionRequest(state, questions)
+  -> JevRuntime.execute(request)
+  -> JevResponse(answers, usage, model)
+  -> ClassificationResult
+```
+
+各层接口如下：
+
+| 层 | 输入 | 输出 |
+| --- | --- | --- |
+| 业务层 | Excel、数据库或 HTTP 等来源的文本 | 传给分类器的 `str`，以及对分类结果的后续业务处理 |
+| `SemanticClassifier` | `classify(text: str)` | `ClassificationResult` |
+| `JevRuntime` | `DecisionRequest`，包含 `state` 和 `questions` | `JevResponse`，包含 `answers`、`usage`、`model` |
+
+分类结果示例：
+
+```python
+result = classifier.classify("处理生产 Redis 连接异常")
+print(result.to_dict())
+```
+
+```python
+{
+    "value": "operations",
+    "label": "运维",
+    "confidence": 0.91,
+    "probabilities": {
+        "operations": 0.91,
+        "development": 0.09,
+    },
+    "fallback": False,
+}
+```
+
+其中：
+
+- `value`：稳定的程序值，用于分支判断和保存。
+- `label`：面向用户的展示名称。
+- `confidence`：整体置信度，范围为 `0` 到 `1`。
+- `probabilities`：各分类的概率。
+- `fallback`：是否因置信度低于阈值进入待确认状态。
+
 这个目录提供两个入口：
 
 - `typesafe_playground.py`：启动明亮主题的浏览器 Playground。
