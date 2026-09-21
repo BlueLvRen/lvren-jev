@@ -100,8 +100,6 @@ typesafe.toml
   -> JevResponse
 ```
 
-测试脚本中的 `FakeJevApiHandler` 只模拟本地 HTTP 服务端响应；客户端仍然使用真实的 `typesafe_sdk.TypeSafeClient`。业务代码不需要写这部分模拟逻辑。
-
 这个目录提供两个入口：
 
 - `typesafe_playground.py`：启动明亮主题的浏览器 Playground。
