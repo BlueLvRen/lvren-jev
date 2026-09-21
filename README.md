@@ -24,12 +24,12 @@
 
 ## 能力概览
 
-| 能力 | 业务示例 | 调用入口 | 返回对象 |
+| 能力 | 判断方式与业务场景 | 调用入口 | 返回对象 |
 | --- | --- | --- | --- |
-| Choice 分类 | 判断工时类型、选择工单处理部门 | `SemanticClassifier.classify()` | `ClassificationResult` |
-| Score 评分 | 评估风险、紧急程度或质量等级 | `ScoreEvaluator.evaluate()` | `ScoreResult` |
-| Noul 条件判断 | 判断是否需要人工复核 | `NoulEvaluator.evaluate()` | `NoulResult` |
-| 组合决策 | 一次请求同时判断类别、紧急程度和人工介入需求 | `JevRuntime.execute()` | `JevResponse` |
+| Choice 分类 | 从互斥类别中选一个，如工时类型、工单处理部门 | `SemanticClassifier.classify()` | `ClassificationResult` |
+| Score 评分 | 按有序标准给出数值，如风险、紧急程度或质量评分 | `ScoreEvaluator.evaluate()` | `ScoreResult` |
+| Noul 条件判断 | 给出条件成立的概率，如是否需要人工复核 | `NoulEvaluator.evaluate()` | `NoulResult` |
+| 组合决策 | 同一上下文的一组问题在一次请求中提交，如同时判断工单部门、紧急度和人工介入需求 | `JevRuntime.execute()` | `JevResponse` |
 
 决策可通过 YAML/JSON 文件维护；运行时统一管理客户端复用、超时、重试、缓存和响应标准化。Excel、数据库、HTTP 等数据读写及后续业务动作由应用负责。
 
@@ -37,11 +37,9 @@
 
 - [为什么使用 lvren-jev](#为什么使用-lvren-jev)
 - [安装](#安装)
-- [快速上手：填写 Excel 工时类型](#快速上手填写-excel-工时类型)
+- [快速上手：四种业务场景](#快速上手四种业务场景)
 - [运行配置](#运行配置)
-- [决策定义与调用](#决策定义与调用)
-- [接口与返回结果](#接口与返回结果)
-- [进阶：一次请求组合多个决策](#进阶一次请求组合多个决策)
+- [能力详解](#能力详解)：[分类](#choice分类)、[评分](#score评分)、[条件判断](#noul条件判断)、[组合决策](#组合决策)
 - [源码开发与构建](#源码开发与构建)
 - [许可证](#许可证)
 
@@ -67,20 +65,11 @@ python -m pip install .
 python -m pip install lvren-jev
 ```
 
-## 快速上手：填写 Excel 工时类型
+## 快速上手：四种业务场景
 
-以填写 Excel 工时类型为例：`工时.xlsx` 的 `sheet1` 第一行是表头，A 列是工时内容，B 列用于写入工时类型。从第二行开始逐行分类，跳过空内容，完成后保存并关闭文件。
+下面分别演示分类、评分、条件判断和组合决策。先在业务脚本的工作目录准备运行配置和密钥文件，再按所选场景创建决策文件。示例结果均为数据结构示意，实际数值由 Jev 返回。
 
-| 行 | A 列：工时内容 | B 列：工时类型（示意结果） |
-| --- | --- | --- |
-| 2 | 处理生产 Redis 连接异常 | 运维 |
-| 3 | 开发用户导出接口 | 开发 |
-
-先在业务脚本的工作目录准备三个文件：
-
-- `worklog.yaml`：告诉 Jev 有哪些工时类型、每个类型的含义，以及低置信度时如何处理。将[Choice 决策定义](#choice分类)保存为此文件，或复制仓库的 [`worklog.yaml`](examples/worklog_classifier/worklog.yaml) 示例。
-- `typesafe.toml`：告诉运行时使用哪个服务、模型及请求参数。
-- `typesafe.secrets.toml`：保存你的 API Key。
+### 公共准备
 
 `typesafe.toml` 内容：
 
@@ -102,6 +91,19 @@ cache = false
 [typesafe]
 api_key = "替换为你的 API Key"
 ```
+
+`typesafe.toml` 配置连接与请求参数，`typesafe.secrets.toml` 保存 API Key。下方 `business_excel`、`business_tickets` 均为业务方模块占位名，需替换为自己的实现；本包提供决策能力，业务模块负责读写及完成状态回报。
+
+### 分类场景：填写 Excel 工时类型
+
+以填写 Excel 工时类型为例：`工时.xlsx` 的 `sheet1` 第一行是表头，A 列是工时内容，B 列用于写入工时类型。从第二行开始逐行分类，跳过空内容，完成后保存并关闭文件。
+
+| 行 | A 列：工时内容 | B 列：工时类型（示意结果） |
+| --- | --- | --- |
+| 2 | 处理生产 Redis 连接异常 | 运维 |
+| 3 | 开发用户导出接口 | 开发 |
+
+先将[分类定义](#choice分类)保存为 `worklog.yaml`，也可复制仓库的 [`worklog.yaml`](examples/worklog_classifier/worklog.yaml)。
 
 下面展示完整的业务调用流程。`business_excel` 是你自己的 Excel 适配模块占位名，**不由本包提供**；示例省略其实现，只约定各方法的输入输出。接入已有 Excel 读写代码后即可运行。示例会覆盖非空 A 列所在行的 B 列，并在全部分类成功后保存原文件；任一行失败则不执行保存，但仍关闭文件。
 
@@ -173,7 +175,93 @@ with JevRuntime.from_config("typesafe.toml") as runtime:
 
 `classify()` 已经将 Jev 选中的类别转换为结果中的 `value` 和 `label`，并应用配置中的置信度阈值。业务方法 `get_work_type_name()` 只提取最终名称，不再发起请求或重新计算概率。置信度低于 `policy.threshold` 时，结果会改为配置的“待确认”；`probabilities` 保留各类别概率，便于业务方复核。这里的结果和概率均为示意，实际由 Jev 返回。
 
-`typesafe.toml` 只保存地址、模型和运行参数；API Key 放在同目录的 `typesafe.secrets.toml` 中，并由 `api_key_file` 引用。应用启动时只需保证这两个文件路径正确。
+### 评分场景：记录工单风险等级
+
+程序读取工单描述，根据评分结果记录风险值，供后续排期使用。先将[评分定义](#score评分)保存为 `risk_score.yaml`，或复制 [`risk_score.yaml`](examples/score_evaluator/risk_score.yaml)。
+
+```python
+from lvren_jev import JevRuntime, ScoreEvaluator, load_decision_definition
+from business_tickets import (
+    read_ticket_description,  # 读取工单描述
+    save_ticket_risk,         # 保存风险评分
+)
+
+definition = load_decision_definition("risk_score.yaml")
+with JevRuntime.from_config("typesafe.toml") as runtime:
+    evaluator = ScoreEvaluator.from_definition(definition, runtime=runtime)
+    # 输入：工单 ID str；输出：描述 str，如 "生产 Redis 连接持续失败"。
+    description = read_ticket_description("T-001")
+    # 输入：str；输出示意：ScoreResult(
+    #     score=4.2, confidence=0.88, legend=None, probabilities=None,
+    # )
+    result = evaluator.evaluate(description)
+    # 输入："T-001" (str)、4.2 (float)；输出：None。
+    save_ticket_risk("T-001", result.score)
+```
+
+评分范围由决策标准定义。是否按某个分值升级处理，由普通程序的业务规则决定。
+
+### 条件判断场景：将工单转入人工队列
+
+程序判断工单是否需要人工介入，达到业务阈值后转入人工队列。先将[条件判断定义](#noul条件判断)保存为 `needs_review.yaml`，或复制 [`needs_review.yaml`](examples/noul_evaluator/needs_review.yaml)。
+
+```python
+from lvren_jev import JevRuntime, NoulEvaluator, load_decision_definition
+from business_tickets import (
+    read_ticket_description,  # 读取工单描述
+    enqueue_human_review,     # 加入人工处理队列
+)
+
+definition = load_decision_definition("needs_review.yaml")
+with JevRuntime.from_config("typesafe.toml") as runtime:
+    evaluator = NoulEvaluator.from_definition(definition, runtime=runtime)
+    # 输入：工单 ID str；输出：描述 str，如 "客户明确要求转人工处理"。
+    description = read_ticket_description("T-002")
+    # 输入：str；输出示意：NoulResult(probability=0.92)。
+    result = evaluator.evaluate(description)
+    # 输入：阈值 float；输出：bool，此示例为 True。
+    if result.is_true(threshold=0.8):
+        # 输入：工单 ID str；输出：None。
+        enqueue_human_review("T-002")
+```
+
+`probability` 表示条件成立的概率；`is_true()` 在本地比较阈值，不再调用 Jev。
+
+### 组合决策场景：一次完成工单分流判断
+
+对同一条工单，同时判断处理部门、紧急程度和是否转人工，再由程序统一执行分派。先将[组合问题定义](#组合决策)保存为 `ticket_questions.json`。
+
+```python
+import json
+from pathlib import Path
+from lvren_jev import DecisionRequest, JevRuntime
+from business_tickets import (
+    read_ticket_description,  # 读取工单描述
+    apply_ticket_decisions,   # 根据判断结果分派工单、设置优先级和人工处理标记
+)
+
+# 输入：JSON 文件；输出：dict，以 team、urgency、needs_human 为键。
+questions = json.loads(Path("ticket_questions.json").read_text(encoding="utf-8"))
+# 输入：工单 ID str；输出：描述 str，如 "页面加载很慢，要求今天解决并转人工"。
+description = read_ticket_description("T-003")
+with JevRuntime.from_config("typesafe.toml") as runtime:
+    # 输入：DecisionRequest(state={"message": str}, questions=dict)。
+    # 输出：JevResponse，answers 为按问题名称分组的字典。
+    response = runtime.execute(DecisionRequest(
+        state={"message": description},
+        questions=questions,
+    ))
+    # 输入：工单 ID str 和答案 dict，结构示意：
+    # {
+    #     "team": {"choice": "technical", "confidence": 0.94},
+    #     "urgency": {"score": 2.0, "confidence": 0.9},
+    #     "needs_human": {"noul": 0.97},
+    # }
+    # 输出：None；字段含义和处理规则见组合决策详解。
+    apply_ticket_decisions("T-003", response.answers)
+```
+
+三个问题在同一个请求中提交。组合响应保留各原语的答案字段，程序按业务规则处理；不会自动转换为三个包装结果对象。
 
 ## 运行配置
 
@@ -244,7 +332,11 @@ api_key = "替换为你的 API Key"
 
 可新增 `[typesafe.profiles.<名称>]` 配置其他来源，并通过 `default_profile` 选择默认来源。
 
-## 决策定义与调用
+### 客户端复用与释放
+
+`JevRuntime.from_config("typesafe.toml")` 会创建官方 SDK 客户端。同一批业务数据复用一个运行时；使用 `with` 在完成或异常时释放客户端。分类、评分、条件判断和组合决策共用这套配置。
+
+## 能力详解
 
 决策定义文件描述“要判断什么”以及答案的含义。它属于业务层，由业务方维护；通用包只负责加载、构造原语请求和解析结果，不关心数据来自 Excel、数据库还是 HTTP。
 
@@ -268,6 +360,8 @@ api_key = "替换为你的 API Key"
 ### Choice：分类
 
 适合工时分类、工单路由、内容类型识别等“只能选一个类别”的场景。
+
+#### 决策定义
 
 示例文件：[`examples/worklog_classifier/worklog.yaml`](examples/worklog_classifier/worklog.yaml)
 
@@ -303,7 +397,7 @@ policy:
 - `categories.<value>.description` 是类别含义，供 Jev 判断。
 - `policy.threshold` 低于该置信度时使用 `fallback`。
 
-调用方式：
+#### 调用接口
 
 ```python
 from lvren_jev import JevRuntime, SemanticClassifier, load_decision_definition
@@ -316,11 +410,45 @@ with JevRuntime.from_config("typesafe.toml") as runtime:
 print(result.value, result.label, result.confidence)
 ```
 
-输出 `ClassificationResult`，主要字段为 `value`、`label`、`confidence`、`probabilities` 和 `fallback`。
+#### 返回结果与处理规则
+
+`classify(text: str)` 接收非空文本，返回 `ClassificationResult` 对象。示意结构：
+
+```python
+ClassificationResult(
+    value="operations",
+    label="运维",
+    confidence=0.91,
+    probabilities={"operations": 0.91, "development": 0.09},
+    fallback=False,
+)
+```
+
+- `value`：稳定的类别 ID，用于程序判断和保存。
+- `label`：展示名称，用于表格或界面。
+- `confidence`：置信度，范围为 `0` 到 `1`。
+- `probabilities`：各类别概率，未提供时为 `None`。
+- `fallback`：低于 `policy.threshold` 时为 `True`，`value` 和 `label` 改用配置中的兜底类别；概率仍保留。
+
+使用 `result.label` 读取属性；需要字典时调用 `result.to_dict()`：
+
+```python
+{
+    "value": "operations",
+    "label": "运维",
+    "confidence": 0.91,
+    "probabilities": {"operations": 0.91, "development": 0.09},
+    "fallback": False,
+}
+```
+
+字典中的 `probabilities` 在没有概率数据时为 `{}`。程序可根据 `fallback` 安排复核，或直接将 `label` 写入业务数据。
 
 ### Score：评分
 
 适合风险程度、紧急程度、质量等级、影响范围等“从低到高有顺序”的场景。Score 的 `criteria` 必须按从低到高排列；返回的 `score` 可以是两个等级之间的小数。
+
+#### 决策定义
 
 示例文件：[`examples/score_evaluator/risk_score.yaml`](examples/score_evaluator/risk_score.yaml)
 
@@ -349,7 +477,7 @@ criteria:
 - 每个等级可以是字符串，也可以是包含分值和描述的对象。
 - Score 不使用 `categories` 和分类 fallback 策略。
 
-调用方式：
+#### 调用接口
 
 ```python
 from lvren_jev import JevRuntime, ScoreEvaluator, load_decision_definition
@@ -362,11 +490,39 @@ with JevRuntime.from_config("typesafe.toml") as runtime:
 print(result.score, result.confidence)
 ```
 
-输出 `ScoreResult`，主要字段为 `score`、`confidence`、`legend` 和 `probabilities`。
+#### 返回结果与处理规则
+
+通过 `from_definition()` 创建时，`evaluate(state)` 接收非空文本，并按 `input.field` 组装状态。直接构造 `ScoreEvaluator` 且未指定 `input_field` 时，也可传入 JSON 对象。
+
+返回 `ScoreResult` 对象，示意结构：
+
+```python
+ScoreResult(
+    score=4.2,
+    confidence=0.88,
+    legend=None,
+    probabilities=None,
+)
+```
+
+- `score`：评分数值，可为小数；评分范围取决于决策标准，不固定为 `0` 到 `1`。
+- `confidence`：置信度，范围为 `0` 到 `1`。
+- `legend`：服务返回的评分说明映射，未提供时为 `None`。
+- `probabilities`：服务返回的概率映射，未提供时为 `None`。
+
+通过 `result.score` 使用分数，或用 `result.to_dict()` 转为字典：
+
+```python
+{"score": 4.2, "confidence": 0.88, "legend": {}, "probabilities": {}}
+```
+
+Score 不自动套用分类的低置信度回退策略。分数达到多少应升级、置信度不足如何复核，由业务程序决定。
 
 ### Noul：条件判断
 
 适合“是否需要人工介入”“是否违反规则”“是否属于高风险”等二元条件判断。Noul 返回的是条件为真的概率，不是绝对布尔值。
+
+#### 决策定义
 
 示例文件：[`examples/noul_evaluator/needs_review.yaml`](examples/noul_evaluator/needs_review.yaml)
 
@@ -391,7 +547,7 @@ criteria:
 - YAML 中建议给 `true` 和 `false` 加引号，避免被 YAML 解析成布尔键。
 - 返回的 `probability` 范围为 `0` 到 `1`，`NoulResult.is_true()` 默认使用 `0.5` 作为判断阈值。
 
-调用方式：
+#### 调用接口
 
 ```python
 from lvren_jev import JevRuntime, NoulEvaluator, load_decision_definition
@@ -405,130 +561,109 @@ print(result.probability)
 print(result.is_true())
 ```
 
-输出 `NoulResult`，主要字段为 `probability`。如果业务需要不同阈值，可以调用 `result.is_true(threshold=0.8)`。
+#### 返回结果与处理规则
 
-## 接口与返回结果
+通过 `from_definition()` 创建时，`evaluate(state)` 接收非空文本，并按 `input.field` 组装状态。直接构造 `NoulEvaluator` 且未指定 `input_field` 时，也可传入 JSON 对象。
 
-### 调用层次
-
-```text
-业务输入: str 或 JSON 对象
-  -> 对应的原语包装类
-  -> DecisionRequest(state, questions)
-  -> JevRuntime.execute(request)
-  -> JevResponse(answers, usage, model)
-  -> 对应的结果类型
-```
-
-各层接口如下：
-
-| 层 | 输入 | 输出 |
-| --- | --- | --- |
-| 业务层 | Excel、数据库或 HTTP 等来源的数据 | 传给包装类的文本或 JSON 对象，以及后续业务处理 |
-| `SemanticClassifier` | `classify(text: str)` | `ClassificationResult` |
-| `ScoreEvaluator` | `evaluate(state)` | `ScoreResult` |
-| `NoulEvaluator` | `evaluate(state)` | `NoulResult` |
-| `JevRuntime` | `DecisionRequest`，包含 `state` 和 `questions` | `JevResponse`，包含 `answers`、`usage`、`model` |
-
-### 分类结果与字典转换
-
-`classify()` 返回的是 `ClassificationResult` 对象，使用 `result.label` 等属性读取字段；调用 `result.to_dict()` 才会转换为字典，使用 `result.to_dict()["label"]` 等方式读取。转换示例：
+返回 `NoulResult` 对象，示意结构：
 
 ```python
-result = classifier.classify("处理生产 Redis 连接异常")
-print(result.to_dict())
+NoulResult(probability=0.92)
 ```
 
+`probability` 范围为 `0` 到 `1`，表示条件成立的概率，没有单独的 `confidence` 字段。`result.to_dict()` 返回：
+
 ```python
+{"probability": 0.92}
+```
+
+`result.is_true()` 默认判断概率是否大于等于 `0.5`；`result.is_true(threshold=0.8)` 可指定业务阈值。该方法仅做本地比较，返回 `bool`。实际转人工或其他动作仍由普通程序执行。
+
+### 组合决策
+
+适合同一份上下文需要同时分类、评分和条件判断的场景，例如工单分流。问题通过 `DecisionRequest.questions` 组合，共享 `state`；这是底层请求格式，不使用单个决策文件的 `kind`，也不由 `load_decision_definition()` 加载。
+
+#### 问题定义
+
+将以下内容保存为 `ticket_questions.json`，供快速上手及下方调用示例读取：
+
+```json
 {
-    "value": "operations",
-    "label": "运维",
-    "confidence": 0.91,
-    "probabilities": {
-        "operations": 0.91,
-        "development": 0.09,
-    },
-    "fallback": False,
+  "team": {
+    "type": "choice",
+    "instructions": "Which team should handle this request?",
+    "criteria": {
+      "billing": "Charges and payments",
+      "technical": "Software failures",
+      "other": "None of these"
+    }
+  },
+  "urgency": {
+    "type": "score",
+    "instructions": "How urgent is this request?",
+    "criteria": ["Can wait", "This week", "Today"]
+  },
+  "needs_human": {
+    "type": "noul",
+    "instructions": "Does the user want to talk to a human?",
+    "criteria": {
+      "true": "The user explicitly asks for a person.",
+      "false": "The user does not ask for a person."
+    }
+  }
 }
 ```
 
-其中：
+外层键是问题名称，也用于读取返回答案。每个问题分别描述自己的 `type`、`instructions` 和 `criteria`。
 
-- `value`：稳定的程序值，用于分支判断和保存。
-- `label`：面向用户的展示名称。
-- `confidence`：整体置信度，范围为 `0` 到 `1`。
-- `probabilities`：各分类的概率。
-- `fallback`：是否因置信度低于阈值进入待确认状态。
-
-### 运行时与客户端
-
-正式使用时不需要手动创建或替换 `TypeSafeClient`。下面这行会读取配置，并自动创建真实的官方 SDK 客户端：
+#### 调用接口
 
 ```python
-runtime = JevRuntime.from_config("typesafe.toml")
-```
-
-调用链是：
-
-```text
-typesafe.toml
-  -> JevRuntime.from_config()
-  -> typesafe_sdk.TypeSafeClient
-  -> TypeSafeClient.system_one()
-  -> JevResponse
-```
-
-## 进阶：一次请求组合多个决策
-
-`JevRuntime` 使用通用的 `DecisionRequest`，可以在一次请求中组合三种原语：
-
-```python
+import json
+from pathlib import Path
 from lvren_jev import DecisionRequest, JevRuntime
 
-runtime = JevRuntime.from_config("typesafe.toml")
-response = runtime.execute(
-    DecisionRequest(
-        state={"message": "页面加载很慢，用户要求今天解决，并希望转人工。"},
-        questions={
-            "team": {
-                "type": "choice",
-                "instructions": "Which team should handle this request?",
-                "criteria": {
-                    "billing": "Charges and payments",
-                    "technical": "Software failures",
-                    "other": "None of these",
-                },
-            },
-            "urgency": {
-                "type": "score",
-                "instructions": "How urgent is this request?",
-                "criteria": ["Can wait", "This week", "Today"],
-            },
-            "needs_human": {
-                "type": "noul",
-                "instructions": "Does the user want to talk to a human?",
-                "criteria": {
-                    "true": "The user explicitly asks for a person.",
-                    "false": "The user does not ask for a person.",
-                },
-            },
-        },
-    )
+questions = json.loads(Path("ticket_questions.json").read_text(encoding="utf-8"))
+request = DecisionRequest(
+    state={"message": "页面加载很慢，用户要求今天解决，并希望转人工。"},
+    questions=questions,
 )
+with JevRuntime.from_config("typesafe.toml") as runtime:
+    response = runtime.execute(request)
 
 print(response.answers["team"])
 print(response.answers["urgency"])
 print(response.answers["needs_human"])
-runtime.close()
 ```
 
-三种原语的输入和返回字段分别是：
+`execute(request: DecisionRequest)` 返回 `JevResponse`；连续调用 `classify()` 或 `evaluate()` 不会自动合并为这个请求。
 
-- `Choice`：`criteria` 是“程序值 -> 描述”的对象；返回 `choice`、`confidence` 和 `probabilities`。
-- `Score`：`criteria` 是从低到高排列的描述数组；返回 `score`、`confidence`、`legend` 和 `probabilities`。`score` 可以是小数。
-- `Noul`：`criteria` 可选，描述 `true` 和 `false`；返回 `noul`，范围为 `0` 到 `1`，表示回答为“是”的概率。Noul 没有单独的 `confidence` 字段。
+#### 返回结果与处理规则
 
-每次只处理一种决策时，可使用前文的 `SemanticClassifier`、`ScoreEvaluator` 或 `NoulEvaluator`；需要组合多个问题时，直接构造 `DecisionRequest`。
+响应对象示意（这里的可选字段为空）：
+
+```python
+JevResponse(
+    answers={
+        "team": {
+            "choice": "technical",
+            "confidence": 0.94,
+            "probabilities": {"billing": 0.02, "technical": 0.94, "other": 0.04},
+        },
+        "urgency": {"score": 2.0, "confidence": 0.9},
+        "needs_human": {"noul": 0.97},
+    },
+    usage=None,
+    model=None,
+    raw=None,
+)
+```
+
+- `answers`：按问题名组织的字典。Choice 答案使用 `choice`，Score 使用 `score`，Noul 使用 `noul`；Score 还可能包含 `legend` 和 `probabilities`。
+- `usage`、`model`：服务返回的用量和模型信息，未提供时为 `None`。
+- `raw`：保留原始响应，便于需要时检查。
+
+组合接口不自动生成 `ClassificationResult`、`ScoreResult` 或 `NoulResult`，也不应用分类定义中的 `label` 映射和回退策略。程序应读取各答案，处理置信度、部门映射、优先级和人工判断阈值，再完成业务操作。
 
 ## 源码开发与构建
 
