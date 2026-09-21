@@ -76,13 +76,13 @@ from lvren_jev import (
     load_decision_definition,
 )
 
-# 业务方提供的 Excel 操作，输入输出见下方调用处注释。
+# 业务方提供的 Excel 操作。
 from business_excel import (
-    open_workbook,
-    iter_work_descriptions,
-    write_work_type,
-    save_workbook,
-    close_workbook,
+    open_workbook,           # 打开 Excel
+    iter_work_descriptions,  # 逐行读取 A 列，跳过空内容
+    write_work_type,         # 将工时类型写入 B 列
+    save_workbook,           # 保存到原文件
+    close_workbook,          # 关闭文件，不隐式保存
 )
 
 
@@ -101,11 +101,11 @@ with JevRuntime.from_config("typesafe.toml") as runtime:
     # SemanticClassifier 将类别定义和运行时组合成可调用的文本分类器。
     classifier = SemanticClassifier.from_definition(definition, runtime=runtime)
 
-    # 输入：文件路径；输出：业务方 Excel 库的工作簿对象。
+    # 输入：路径 str；输出：工作簿对象。
     workbook = open_workbook("工时.xlsx")
     try:
-        # 输入：工作簿、工作表名和起始行；读取 A 列，跳过空内容。
-        # 输出：逐个 (行号, 文本)，例如 (2, "处理生产 Redis 连接异常")。
+        # 输入：工作簿对象、工作表名 str、起始行 int。
+        # 输出：迭代器，每项为 (int, str)，如 (2, "处理生产 Redis 连接异常")。
         for row_number, description in iter_work_descriptions(
             workbook, sheet_name="sheet1", start_row=2
         ):
@@ -124,14 +124,13 @@ with JevRuntime.from_config("typesafe.toml") as runtime:
             result = classifier.classify(description)
             work_type = get_work_type_name(result)
 
-            # 输入：工作簿、工作表、行号和类型名称；将名称写入该行 B 列。
-            # 例如第 2 行写入 "运维"；无返回值。
+            # 输入：工作簿对象、"sheet1" (str)、2 (int)、"运维" (str)；输出：None。
             write_work_type(workbook, "sheet1", row_number, work_type)
 
-        # 输入：工作簿；保存到原文件，无返回值。
+        # 输入：工作簿对象；输出：None。
         save_workbook(workbook)
     finally:
-        # 输入：工作簿；释放文件资源，不隐式保存，无返回值。
+        # 输入：工作簿对象；输出：None。
         close_workbook(workbook)
 ```
 
