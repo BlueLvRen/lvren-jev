@@ -136,7 +136,7 @@ with JevRuntime.from_config("typesafe.toml") as runtime:
 
 `classify()` 已经将 Jev 选中的类别转换为结果中的 `value` 和 `label`，并应用配置中的置信度阈值。业务方法 `get_work_type_name()` 只提取最终名称，不再发起请求或重新计算概率。置信度低于 `policy.threshold` 时，结果会改为配置的“待确认”；`probabilities` 保留各类别概率，便于业务方复核。这里的结果和概率均为示意，实际由 Jev 返回。
 
-不建议把真实 API Key 提交到 Git。更安全的做法是使用 `api_key_file`，详见[配置](#配置)。
+`typesafe.toml` 只保存地址、模型和运行参数；API Key 放在同目录的 `typesafe.secrets.toml` 中，并由 `api_key_file` 引用。应用启动时只需保证这两个文件路径正确。
 
 通用层公开对象的关系是：
 
