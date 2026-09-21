@@ -1,10 +1,10 @@
-# lvren-jev：基于 Jev 的文本分类库
+# lvren-jev：基于 Jev 的通用决策库
 
 ## 通用决策库
 
-`lvren-jev` 将一段文本交给 TypeSafe Jev，根据你定义的类别返回分类结果、置信度和各类别概率。例如，将“处理生产 Redis 连接异常”归为“运维”，用于自动填写 Excel 工时类型、分派工单或分类邮件。
+`lvren-jev` 将文本或应用状态交给 TypeSafe Jev，根据你定义的决策返回分类、评分或条件概率。例如，将“处理生产 Redis 连接异常”归为“运维”，用于自动填写 Excel 工时类型、分派工单或分类邮件。
 
-你通过 YAML/JSON 文件描述类别及其含义，通过 Python API 执行分类；Excel、数据库或 HTTP 的读写由业务代码负责。仓库还提供用于调试请求的浏览器 Playground 和 CLI。
+你通过 YAML/JSON 文件描述决策及其含义，通过 Python API 执行判断；Excel、数据库或 HTTP 的读写由业务代码负责。
 
 ### 安装
 
@@ -359,8 +359,6 @@ cache = false
 
 `typesafe.toml` 中也可以使用 `default_profile` 和 `typesafe.profiles.<name>` 管理多个 API 来源，详见[配置](#配置)。
 
-注意：`max_questions` 是 Playground/CLI 的本地问题数量保护配置，不是通用 `JevRuntime` 的运行时字段；通用包使用上面的 `timeout`、`retry` 和 `cache`。
-
 ### 分层输入和输出
 
 ```text
@@ -495,20 +493,11 @@ print(needs_review.probability, needs_review.is_true())
 
 三个原语包装类都位于 `lvren_jev.decision` 模块，并且共享同一个 `JevRuntime`。固定类别分类使用 `SemanticClassifier`，评分使用 `ScoreEvaluator`，真假概率判断使用 `NoulEvaluator`。
 
-## Playground 与 CLI
-
-除 Python 包外，源码仓库还提供两个调试入口，以下命令均在仓库根目录执行：
-
-- `typesafe_playground.py`：启动明亮主题的浏览器 Playground。
-- `typesafe_cli.py`：供 Codex 或其他本地脚本调用，输出 JSON。
-
-两者都通过官方 `typesafe-sdk` 调用 TypeSafe Jev，并在一个进程内复用同一个 `TypeSafeClient`。
-
 本项目采用 [MIT License](LICENSE)。`typesafe-sdk`、TypeSafe API 和 Jev 模型属于第三方服务或依赖，分别遵循其自身的许可证、服务条款和使用限制。
 
 ## 环境准备
 
-以下命令以 Windows PowerShell 为例。项目要求 Python 3.11 或更高版本，因为代码使用了内置 `tomllib` 和现代类型语法；运行 Playground 还需要可用的浏览器和网络连接。
+以下命令以 Windows PowerShell 为例。项目要求 Python 3.11 或更高版本，因为代码使用了内置 `tomllib` 和现代类型语法。
 
 ### 1. 获取项目
 
@@ -545,7 +534,7 @@ Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
 
 ### 3. 创建本地 API Key 文件
 
-仓库中的 `typesafe.toml` 只保存地址、模型和 Profile，不保存 API Key。首次使用时，在项目目录创建 `typesafe.secrets.toml`：
+使用方的 `typesafe.toml` 只保存地址、模型和 Profile，不保存 API Key。首次使用时，在业务项目目录创建 `typesafe.secrets.toml`：
 
 ```powershell
 notepad .\typesafe.secrets.toml
@@ -558,20 +547,20 @@ notepad .\typesafe.secrets.toml
 api_key = "替换为你的 TypeSafe API Key"
 ```
 
-如果配置了其他 Profile，为其创建对应的密钥文件，内容格式相同。仓库已忽略 `typesafe.secrets.toml` 和 `typesafe.secrets.*.toml`；请勿提交真实密钥。
+如果配置了其他 Profile，为其创建对应的密钥文件，内容格式相同。请将 `typesafe.secrets.toml` 和 `typesafe.secrets.*.toml` 加入业务项目的 `.gitignore`；请勿提交真实密钥。
 
-### 4. 检查配置
+### 4. 检查安装
 
 ```powershell
-python -c "from typesafe_client import load_config; c=load_config(); print({'profile': c.profile, 'base_url': c.base_url, 'max_questions': c.max_questions})"
+python -c "import lvren_jev; print('lvren-jev', lvren_jev.__version__)"
 ```
 
-正常情况下会显示当前 Profile、服务地址和 `max_questions = 0`，不会输出 API Key。配置异常时，先检查 `typesafe.toml` 和对应的 `typesafe.secrets*.toml` 是否存在、格式是否正确。
+正常情况下会显示已安装的 `lvren-jev` 版本。
 
 ### 5. 运行测试
 
 ```powershell
-python -m unittest discover -s . -p "test_*.py" -v
+python -m unittest discover -s tests -v
 ```
 
 ## 配置
@@ -589,15 +578,6 @@ model = "jev-1.13.0"
 
 ```
 
-本地问题数量保护在 `[runtime]` 中配置：
-
-```toml
-[runtime]
-max_questions = 0
-```
-
-`0` 表示不启用本地数量限制；设置为正整数时，超过该数量的问题会在调用 Jev 前被拒绝。该配置只是本地保护，不代表 Jev 官方服务端限制。
-
 每个 Profile 的 API Key 位于同级独立密钥文件。例如官方 Profile：
 
 ```toml
@@ -605,107 +585,8 @@ max_questions = 0
 api_key = "替换为你的 API Key"
 ```
 
-`typesafe.secrets.toml` 和 `typesafe.secrets.*.toml` 已加入仓库的 `.gitignore`。在自己的项目中使用时，也应将密钥文件加入忽略规则。要增加其他来源，可新增 `[typesafe.profiles.<名称>]`，填写对应地址、模型和密钥文件路径，再通过 `--profile <名称>` 选择。
-
-## 启动 Playground
-
-在仓库根目录执行：
-
-```powershell
-python .\typesafe_playground.py
-```
-
-显式选择已配置的来源启动：
-
-```powershell
-python .\typesafe_playground.py --profile official
-```
-
-浏览器打开：
-
-```text
-http://127.0.0.1:8765
-```
-
-页面一次请求覆盖 `Choice`、`Score`、`Noul`，并显示：
-
-- 浏览器总耗时
-- 服务端总耗时
-- Jev 请求耗时
-- 配置、客户端准备、问题构造和响应序列化耗时
-
-返回的原始答案不会被本地业务策略改写，因此 Choice/Score 的 `confidence`、`probabilities` 和 Noul 的 `noul` 都会保留。
-
-## CLI 调用
-
-直接传 JSON：
-
-```powershell
-python .\typesafe_cli.py `
-  --state '{"message":"页面加载要 8 秒，用户希望今天解决。","channel":"web"}' `
-  --questions '{"team":{"type":"choice","instructions":"Which team should handle this request?","criteria":{"billing":"Charges and payments","technical":"Software failures","other":"None of these"}},"urgency":{"type":"score","instructions":"How urgent is this request?","criteria":["Can wait","This week","Today"]},"urgent":{"type":"noul","instructions":"Does the sender request help today?"}}' `
-  --pretty
-```
-
-也可以从文件读取：
-
-```powershell
-python .\typesafe_cli.py `
-  --state-file state.json `
-  --questions-file questions.json `
-  --profile official `
-  --pretty
-```
-
-可选参数：
-
-```text
---config PATH     指定主 TOML 配置文件
---profile NAME    选择配置来源；省略时使用 default_profile
---model MODEL     临时覆盖配置中的模型
---pretty          美化 JSON 输出
-```
-
-成功时退出码为 `0`，标准输出为 JSON。
-
-错误时仍输出 JSON，并使用非零退出码：
-
-```json
-{
-  "error": {
-    "code": "INVALID_REQUEST",
-    "message": "..."
-  }
-}
-```
-
-目前使用的错误码包括：
-
-```text
-INVALID_REQUEST
-CONFIG_ERROR
-TYPESAFE_AUTHENTICATION_ERROR
-TYPESAFE_TIMEOUT
-TYPESAFE_RATE_LIMIT
-TYPESAFE_API_ERROR
-INTERNAL_ERROR
-```
-
-## 请求校验
-
-当前代码会校验：
-
-- State 必须是字符串、数组或 JSON 对象。
-- Questions 必须是非空对象。
-- `[runtime].max_questions` 默认为 `0`；大于 `0` 时限制单次本地请求的问题数量。
-- 每个问题必须有非空 Instructions。
-- Choice Criteria 必须有非空标签，标签不能重复。
-- Score 至少有两个等级，等级必须非空且不能重复。
-- Noul Criteria 只能使用 `true` 和 `false`。
-- Criteria 和 State 必须是 JSON 可表达的数据。
-
 ## 测试
 
 ```powershell
-python -m unittest discover -s . -p "test_*.py" -v
+python -m unittest discover -s tests -v
 ```
