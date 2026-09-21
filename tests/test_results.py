@@ -1,6 +1,6 @@
 import unittest
 
-from typesafe_jev import ClassificationResult
+from lvren_jev import ClassificationResult
 
 
 class ClassificationResultTests(unittest.TestCase):

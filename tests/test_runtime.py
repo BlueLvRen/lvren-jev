@@ -1,6 +1,6 @@
 import unittest
 
-from typesafe_jev import DecisionRequest, JevResponse, JevRuntime, JevRuntimeError
+from lvren_jev import DecisionRequest, JevResponse, JevRuntime, JevRuntimeError
 
 
 class FakeClient:

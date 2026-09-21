@@ -13,7 +13,7 @@ python -m pip install .
 最小调用链：
 
 ```python
-from typesafe_jev import (
+from lvren_jev import (
     JevRuntime,
     SemanticClassifier,
     load_decision_definition,
@@ -63,14 +63,14 @@ YAML/JSON
 
 ```powershell
 cd C:\Project\4-Python
-git clone git@github.com:BlueLvRen/typedafe-jve.git typesafe_jev
-cd typesafe_jev
+git clone git@github.com:BlueLvRen/lvren-jev.git lvren_jev
+cd lvren_jev
 ```
 
 如果项目已经存在，只需进入目录：
 
 ```powershell
-cd C:\Project\4-Python\typesafe_jev
+cd C:\Project\4-Python\lvren_jev
 ```
 
 ### 2. 创建虚拟环境并安装依赖
@@ -168,13 +168,13 @@ api_key = "替换为你的 API Key"
 在 `C:\Project\4-Python` 下执行：
 
 ```powershell
-python typesafe_jev\typesafe_playground.py
+python lvren_jev\typesafe_playground.py
 ```
 
 切换来源启动：
 
 ```powershell
-python typesafe_jev\typesafe_playground.py --profile omnilabs
+python lvren_jev\typesafe_playground.py --profile omnilabs
 ```
 
 浏览器打开：
@@ -197,7 +197,7 @@ http://127.0.0.1:8765
 直接传 JSON：
 
 ```powershell
-python typesafe_jev\typesafe_cli.py `
+python lvren_jev\typesafe_cli.py `
   --state '{"message":"页面加载要 8 秒，用户希望今天解决。","channel":"web"}' `
   --questions '{"team":{"type":"choice","instructions":"Which team should handle this request?","criteria":{"billing":"Charges and payments","technical":"Software failures","other":"None of these"}},"urgency":{"type":"score","instructions":"How urgent is this request?","criteria":["Can wait","This week","Today"]},"urgent":{"type":"noul","instructions":"Does the sender request help today?"}}' `
   --pretty
@@ -206,7 +206,7 @@ python typesafe_jev\typesafe_cli.py `
 也可以从文件读取：
 
 ```powershell
-python typesafe_jev\typesafe_cli.py `
+python lvren_jev\typesafe_cli.py `
   --state-file state.json `
   --questions-file questions.json `
   --profile official `
@@ -263,5 +263,5 @@ INTERNAL_ERROR
 ## 测试
 
 ```powershell
-python -m unittest discover -s typesafe_jev -p "test_*.py" -v
+python -m unittest discover -s . -p "test_*.py" -v
 ```

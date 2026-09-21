@@ -3,7 +3,7 @@ requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "typesafe-jev"
+name = "lvren-jev"
 dynamic = ["version"]
 description = "Business-neutral semantic decision runtime for TypeSafe Jev"
 readme = "README.md"
@@ -21,4 +21,4 @@ where = ["src"]
 "" = "src"
 
 [tool.setuptools.dynamic]
-version = {attr = "typesafe_jev._version.__version__"}
+version = {attr = "lvren_jev._version.__version__"}

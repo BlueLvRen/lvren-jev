@@ -3,14 +3,14 @@ import tomllib
 import unittest
 from pathlib import Path
 
-import typesafe_jev
+import lvren_jev
 
 
 class VersionTests(unittest.TestCase):
     def test_runtime_version_matches_installed_distribution_version(self):
         self.assertEqual(
-            typesafe_jev.__version__,
-            importlib.metadata.version("typesafe-jev"),
+            lvren_jev.__version__,
+            importlib.metadata.version("lvren-jev"),
         )
 
     def test_build_metadata_uses_runtime_version_as_single_source(self):
@@ -23,7 +23,7 @@ class VersionTests(unittest.TestCase):
         self.assertIn("version", metadata["dynamic"])
         self.assertEqual(
             project["tool"]["setuptools"]["dynamic"]["version"]["attr"],
-            "typesafe_jev._version.__version__",
+            "lvren_jev._version.__version__",
         )
 
 

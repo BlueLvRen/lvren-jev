@@ -1,6 +1,6 @@
 import unittest
 
-from typesafe_jev import (
+from lvren_jev import (
     CategoryDefinition,
     ClassificationResult,
     DecisionDefinition,

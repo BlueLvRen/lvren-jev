@@ -3,7 +3,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from typesafe_jev import (
+from lvren_jev import (
     CategoryDefinition,
     DefinitionError,
     DecisionDefinition,
