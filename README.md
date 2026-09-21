@@ -283,6 +283,67 @@ print(result.to_dict())
 - `probabilities`：各分类的概率。
 - `fallback`：是否因置信度低于阈值进入待确认状态。
 
+### 三种原语的支持边界
+
+当前包分为两层：
+
+| 接口 | Choice | Score | Noul |
+| --- | --- | --- | --- |
+| `JevRuntime.execute()` | 支持 | 支持 | 支持 |
+| `JevResponse.answers` | 返回原始答案 | 返回原始答案 | 返回原始答案 |
+| `SemanticClassifier.classify()` | 已适配 | 未适配 | 未适配 |
+| `ClassificationResult` | 表示一个 Choice 结果 | 不适用 | 不适用 |
+
+`JevRuntime` 使用通用的 `DecisionRequest`，可以在一次请求中组合三种原语：
+
+```python
+from lvren_jev import DecisionRequest, JevRuntime
+
+runtime = JevRuntime.from_config("typesafe.toml")
+response = runtime.execute(
+    DecisionRequest(
+        state={"message": "页面加载很慢，用户要求今天解决，并希望转人工。"},
+        questions={
+            "team": {
+                "type": "choice",
+                "instructions": "Which team should handle this request?",
+                "criteria": {
+                    "billing": "Charges and payments",
+                    "technical": "Software failures",
+                    "other": "None of these",
+                },
+            },
+            "urgency": {
+                "type": "score",
+                "instructions": "How urgent is this request?",
+                "criteria": ["Can wait", "This week", "Today"],
+            },
+            "needs_human": {
+                "type": "noul",
+                "instructions": "Does the user want to talk to a human?",
+                "criteria": {
+                    "true": "The user explicitly asks for a person.",
+                    "false": "The user does not ask for a person.",
+                },
+            },
+        },
+    )
+)
+
+print(response.answers["team"])
+print(response.answers["urgency"])
+print(response.answers["needs_human"])
+runtime.close()
+```
+
+三种原语的输入和返回字段分别是：
+
+- `Choice`：`criteria` 是“程序值 -> 描述”的对象；返回 `choice`、`confidence` 和 `probabilities`。
+- `Score`：`criteria` 是从低到高排列的描述数组；返回 `score`、`confidence`、`legend` 和 `probabilities`。`score` 可以是小数。
+- `Noul`：`criteria` 可选，描述 `true` 和 `false`；返回 `noul`，范围为 `0` 到 `1`，表示回答为“是”的概率。Noul 没有单独的 `confidence` 字段。
+
+因此，当前如果使用 Score 或 Noul，应直接读取 `JevResponse.answers`；只有固定类别分类场景才使用更高层的 `SemanticClassifier` 和 `ClassificationResult`。
+
 ## Playground 与 CLI
 
 除 Python 包外，源码仓库还提供两个调试入口，以下命令均在仓库根目录执行：
