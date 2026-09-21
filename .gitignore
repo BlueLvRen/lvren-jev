@@ -11,3 +11,9 @@ __pycache__/
 .mypy_cache/
 .ruff_cache/
 
+# Local agent instructions and agent environments
+AGENTS.md
+AGENTS.local.md
+.codex/
+.agents/
+CONTEXT.md
