@@ -587,4 +587,4 @@ python -m pip install .\dist\lvren_jev-0.2.0-py3-none-any.whl
 
 ## 许可证
 
-本项目采用 [MIT License](LICENSE)。`typesafe-sdk`、TypeSafe API 和 Jev 模型属于第三方服务或依赖，分别遵循其自身的许可证、服务条款和使用限制。
+本项目采用 [MIT License](LICENSE)。你可以自由使用、复制、修改和分发本项目，包括用于商业项目；使用时请保留版权和许可证声明。项目按现状提供，不附带任何担保。
