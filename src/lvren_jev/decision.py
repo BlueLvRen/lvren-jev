@@ -15,6 +15,7 @@ class _PrimitiveEvaluator:
         name: str,
         runtime: Any,
         instructions: str | None = None,
+        input_field: str | None = None,
     ) -> None:
         if not isinstance(name, str) or not name.strip():
             raise ValueError("decision name must be a non-empty string")
@@ -22,9 +23,19 @@ class _PrimitiveEvaluator:
             raise TypeError("runtime must provide execute(request)")
         if instructions is not None and not isinstance(instructions, str):
             raise TypeError("instructions must be a string or None")
+        if input_field is not None and (not isinstance(input_field, str) or not input_field.strip()):
+            raise ValueError("input_field must be a non-empty string or None")
         self.name = name
         self.runtime = runtime
         self.instructions = instructions
+        self.input_field = input_field
+
+    def _prepare_state(self, value: Any) -> Any:
+        if self.input_field is None:
+            return value
+        if not isinstance(value, str) or not value.strip():
+            raise ValueError("decision input must be a non-empty string")
+        return {self.input_field: value}
 
     def _execute(self, state: Any, question: Mapping[str, Any]) -> Mapping[str, Any]:
         response = self.runtime.execute(
@@ -57,6 +68,8 @@ class SemanticClassifier(_PrimitiveEvaluator):
     def __init__(self, definition: DecisionDefinition, runtime: Any):
         if not isinstance(definition, DecisionDefinition):
             raise TypeError("definition must be a DecisionDefinition")
+        if definition.kind != "classifier":
+            raise TypeError("SemanticClassifier requires a classifier definition")
         super().__init__(name=definition.name, runtime=runtime)
         self.definition = definition
 
@@ -125,13 +138,38 @@ class ScoreEvaluator(_PrimitiveEvaluator):
         criteria: Sequence[Any],
         runtime: Any,
         instructions: str | None = None,
+        input_field: str | None = None,
     ) -> None:
         if isinstance(criteria, (str, bytes)) or not isinstance(criteria, Sequence):
             raise TypeError("score criteria must be a sequence")
         if not criteria:
             raise ValueError("score criteria must not be empty")
-        super().__init__(name=name, runtime=runtime, instructions=instructions)
+        super().__init__(
+            name=name,
+            runtime=runtime,
+            instructions=instructions,
+            input_field=input_field,
+        )
         self.criteria = list(criteria)
+
+    @classmethod
+    def from_definition(
+        cls,
+        definition: DecisionDefinition,
+        *,
+        runtime: Any,
+    ) -> "ScoreEvaluator":
+        if not isinstance(definition, DecisionDefinition):
+            raise TypeError("definition must be a DecisionDefinition")
+        if definition.kind != "score":
+            raise TypeError("ScoreEvaluator requires a score definition")
+        return cls(
+            name=definition.name,
+            criteria=definition.criteria,
+            runtime=runtime,
+            instructions=definition.instructions,
+            input_field=definition.input_field,
+        )
 
     def evaluate(self, state: Any) -> ScoreResult:
         question: dict[str, Any] = {
@@ -140,7 +178,7 @@ class ScoreEvaluator(_PrimitiveEvaluator):
         }
         if self.instructions is not None:
             question["instructions"] = self.instructions
-        answer = self._execute(state, question)
+        answer = self._execute(self._prepare_state(state), question)
         score = answer.get("score")
         if isinstance(score, bool) or not isinstance(score, (int, float)):
             raise ValueError("Jev score answer must contain a number")
@@ -163,9 +201,34 @@ class NoulEvaluator(_PrimitiveEvaluator):
         runtime: Any,
         criteria: Any = None,
         instructions: str | None = None,
+        input_field: str | None = None,
     ) -> None:
-        super().__init__(name=name, runtime=runtime, instructions=instructions)
+        super().__init__(
+            name=name,
+            runtime=runtime,
+            instructions=instructions,
+            input_field=input_field,
+        )
         self.criteria = criteria
+
+    @classmethod
+    def from_definition(
+        cls,
+        definition: DecisionDefinition,
+        *,
+        runtime: Any,
+    ) -> "NoulEvaluator":
+        if not isinstance(definition, DecisionDefinition):
+            raise TypeError("definition must be a DecisionDefinition")
+        if definition.kind != "noul":
+            raise TypeError("NoulEvaluator requires a noul definition")
+        return cls(
+            name=definition.name,
+            criteria=definition.criteria,
+            runtime=runtime,
+            instructions=definition.instructions,
+            input_field=definition.input_field,
+        )
 
     def evaluate(self, state: Any) -> NoulResult:
         question: dict[str, Any] = {"type": "noul"}
@@ -173,7 +236,7 @@ class NoulEvaluator(_PrimitiveEvaluator):
             question["instructions"] = self.instructions
         if self.criteria is not None:
             question["criteria"] = self.criteria
-        answer = self._execute(state, question)
+        answer = self._execute(self._prepare_state(state), question)
         probability = answer.get("noul", answer.get("probability"))
         if isinstance(probability, bool) or not isinstance(probability, (int, float)):
             raise ValueError("Jev Noul answer must contain a probability")

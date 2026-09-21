@@ -1,0 +1,12 @@
+version: 1
+kind: noul
+name: needs_review
+
+input:
+  type: text
+  field: description
+  instructions: Determine whether the case requires human review.
+
+criteria:
+  "true": The case is ambiguous, sensitive, high risk, or explicitly asks for a human.
+  "false": The case is clear and can be handled without human review.

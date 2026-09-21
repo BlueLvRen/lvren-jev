@@ -1,6 +1,7 @@
 import unittest
 
 from lvren_jev import (
+    DecisionDefinition,
     NoulEvaluator,
     NoulResult,
     ScoreEvaluator,
@@ -81,6 +82,53 @@ class DecisionAdapterTests(unittest.TestCase):
 
         self.assertFalse(result.is_true(threshold=0.7))
         self.assertEqual(result.to_dict(), {"probability": 0.62})
+
+    def test_score_evaluator_can_be_created_from_a_score_definition(self):
+        definition = DecisionDefinition.from_mapping(
+            {
+                "version": 1,
+                "kind": "score",
+                "name": "risk_score",
+                "input": {
+                    "type": "text",
+                    "field": "description",
+                    "instructions": "Score the risk from 0 to 5.",
+                },
+                "criteria": ["0 = low", "5 = high"],
+            }
+        )
+        runtime = FakeRuntime(
+            {"answers": {"risk_score": {"score": 4, "confidence": 0.9}}}
+        )
+
+        result = ScoreEvaluator.from_definition(definition, runtime=runtime).evaluate(
+            "Repeated payment failures"
+        )
+
+        self.assertEqual(result.score, 4.0)
+        self.assertEqual(runtime.requests[0].state, {"description": "Repeated payment failures"})
+
+    def test_noul_evaluator_can_be_created_from_a_noul_definition(self):
+        definition = DecisionDefinition.from_mapping(
+            {
+                "version": 1,
+                "kind": "noul",
+                "name": "needs_review",
+                "input": {"type": "text", "field": "description"},
+                "criteria": {
+                    "true": "The case requires human review.",
+                    "false": "The case does not require human review.",
+                },
+            }
+        )
+        runtime = FakeRuntime({"answers": {"needs_review": {"noul": 0.8}}})
+
+        result = NoulEvaluator.from_definition(definition, runtime=runtime).evaluate(
+            "Suspicious transaction"
+        )
+
+        self.assertEqual(result.probability, 0.8)
+        self.assertEqual(runtime.requests[0].state, {"description": "Suspicious transaction"})
 
 
 if __name__ == "__main__":

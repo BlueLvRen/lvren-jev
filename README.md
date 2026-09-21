@@ -41,7 +41,7 @@ python -m pip install .\dist\lvren_jev-0.2.0-py3-none-any.whl
 
 先在业务脚本的工作目录准备三个文件：
 
-- `worklog.yaml`：告诉 Jev 有哪些工时类型、每个类型的含义，以及低置信度时如何处理。将[下文的 YAML](#worklogyaml业务决策定义)保存为此文件，或复制仓库的 [`worklog.yaml`](examples/worklog_classifier/worklog.yaml) 示例。
+- `worklog.yaml`：告诉 Jev 有哪些工时类型、每个类型的含义，以及低置信度时如何处理。将[下文的 YAML](#按原语分组的决策定义)保存为此文件，或复制仓库的 [`worklog.yaml`](examples/worklog_classifier/worklog.yaml) 示例。
 - `typesafe.toml`：告诉运行时使用哪个服务、模型及请求参数。
 - `typesafe.secrets.toml`：保存你的 API Key。
 
@@ -168,11 +168,32 @@ typesafe.toml
 
 ## 配置和数据格式
 
-### `worklog.yaml`：业务决策定义
+### 按原语分组的决策定义
 
-`worklog.yaml` 描述“要分什么类别”以及每个类别的含义。它属于业务层，由业务方维护；通用包只负责加载和执行，不关心数据来自 Excel、数据库还是 HTTP。
+决策定义文件描述“要判断什么”以及答案的含义。它属于业务层，由业务方维护；通用包只负责加载、构造原语请求和解析结果，不关心数据来自 Excel、数据库还是 HTTP。
 
-最小结构：
+目前支持三种 `kind`：
+
+| `kind` | 对应原语 | 适合场景 | Python 包装类 | 结果类型 |
+| --- | --- | --- | --- | --- |
+| `classifier` | Choice | 从互斥类别中选择一个结果 | `SemanticClassifier` | `ClassificationResult` |
+| `score` | Score | 对一个维度进行有序程度评分 | `ScoreEvaluator` | `ScoreResult` |
+| `noul` | Noul | 判断一个条件成立的概率 | `NoulEvaluator` | `NoulResult` |
+
+三种定义都有以下公共字段：
+
+- `version`：决策文件格式版本，目前为 `1`。
+- `kind`：决定使用哪种原语和包装类。
+- `name`：问题名称，也是 Jev 返回答案中的问题标识。
+- `input.type`：当前支持 `text`。
+- `input.field`：输入文本在 `state` 中使用的字段名。
+- `input.instructions`：告诉 Jev 如何进行判断的说明。
+
+#### Choice：分类
+
+适合工时分类、工单路由、内容类型识别等“只能选一个类别”的场景。
+
+示例文件：[`examples/worklog_classifier/worklog.yaml`](examples/worklog_classifier/worklog.yaml)
 
 ```yaml
 version: 1
@@ -199,12 +220,116 @@ policy:
     label: 待确认
 ```
 
-字段含义：
+关键数据结构：
 
-- `name`：问题名称，也是返回答案中的问题标识。
-- `input.field`：输入文本在 `state` 中使用的字段名。
-- `categories`：程序值、展示名称和分类说明。程序值如 `operations` 应保持稳定。
-- `policy.threshold`：低于此置信度时使用 `fallback`。
+- `categories` 是“程序值 -> 类别定义”的对象。
+- `categories.<value>.label` 是展示名称。
+- `categories.<value>.description` 是类别含义，供 Jev 判断。
+- `policy.threshold` 低于该置信度时使用 `fallback`。
+
+调用方式：
+
+```python
+from lvren_jev import JevRuntime, SemanticClassifier, load_decision_definition
+
+definition = load_decision_definition("worklog.yaml")
+with JevRuntime.from_config("typesafe.toml") as runtime:
+    classifier = SemanticClassifier.from_definition(definition, runtime=runtime)
+    result = classifier.classify("处理生产 Redis 连接异常")
+
+print(result.value, result.label, result.confidence)
+```
+
+输出 `ClassificationResult`，主要字段为 `value`、`label`、`confidence`、`probabilities` 和 `fallback`。
+
+#### Score：评分
+
+适合风险程度、紧急程度、质量等级、影响范围等“从低到高有顺序”的场景。Score 的 `criteria` 必须按从低到高排列；返回的 `score` 可以是两个等级之间的小数。
+
+示例文件：[`examples/score_evaluator/risk_score.yaml`](examples/score_evaluator/risk_score.yaml)
+
+```yaml
+version: 1
+kind: score
+name: risk_score
+
+input:
+  type: text
+  field: description
+  instructions: Evaluate the operational risk described in the text.
+
+criteria:
+  - 0: No meaningful operational risk
+  - 1: Minor issue with a local impact
+  - 2: Limited impact or workaround available
+  - 3: Material impact requiring prompt action
+  - 4: Major impact across an important workflow
+  - 5: Critical production risk requiring immediate response
+```
+
+关键数据结构：
+
+- `criteria` 是有序数组，位置代表从低到高的评分等级。
+- 每个等级可以是字符串，也可以是包含分值和描述的对象。
+- Score 不使用 `categories` 和分类 fallback 策略。
+
+调用方式：
+
+```python
+from lvren_jev import JevRuntime, ScoreEvaluator, load_decision_definition
+
+definition = load_decision_definition("risk_score.yaml")
+with JevRuntime.from_config("typesafe.toml") as runtime:
+    evaluator = ScoreEvaluator.from_definition(definition, runtime=runtime)
+    result = evaluator.evaluate("生产 Redis 连接持续失败")
+
+print(result.score, result.confidence)
+```
+
+输出 `ScoreResult`，主要字段为 `score`、`confidence`、`legend` 和 `probabilities`。
+
+#### Noul：条件判断
+
+适合“是否需要人工介入”“是否违反规则”“是否属于高风险”等二元条件判断。Noul 返回的是条件为真的概率，不是绝对布尔值。
+
+示例文件：[`examples/noul_evaluator/needs_review.yaml`](examples/noul_evaluator/needs_review.yaml)
+
+```yaml
+version: 1
+kind: noul
+name: needs_review
+
+input:
+  type: text
+  field: description
+  instructions: Determine whether the case requires human review.
+
+criteria:
+  "true": The case is ambiguous, sensitive, high risk, or explicitly asks for a human.
+  "false": The case is clear and can be handled without human review.
+```
+
+关键数据结构：
+
+- `criteria` 可省略，也可以用 `true`/`false` 两个键分别描述两种情况。
+- YAML 中建议给 `true` 和 `false` 加引号，避免被 YAML 解析成布尔键。
+- 返回的 `probability` 范围为 `0` 到 `1`，`NoulResult.is_true()` 默认使用 `0.5` 作为判断阈值。
+
+调用方式：
+
+```python
+from lvren_jev import JevRuntime, NoulEvaluator, load_decision_definition
+
+definition = load_decision_definition("needs_review.yaml")
+with JevRuntime.from_config("typesafe.toml") as runtime:
+    evaluator = NoulEvaluator.from_definition(definition, runtime=runtime)
+    result = evaluator.evaluate("客户明确要求转人工处理")
+
+print(result.probability)
+print(result.is_true())
+```
+
+输出 `NoulResult`，主要字段为 `probability`。如果业务需要不同阈值，可以调用 `result.is_true(threshold=0.8)`。
 
 ### `typesafe.toml`：通用运行时配置
 
@@ -239,20 +364,22 @@ cache = false
 ### 分层输入和输出
 
 ```text
-业务输入文本: str
-  -> SemanticClassifier.classify(text)
+业务输入: str 或 JSON 对象
+  -> 对应的原语包装类
   -> DecisionRequest(state, questions)
   -> JevRuntime.execute(request)
   -> JevResponse(answers, usage, model)
-  -> ClassificationResult
+  -> 对应的结果类型
 ```
 
 各层接口如下：
 
 | 层 | 输入 | 输出 |
 | --- | --- | --- |
-| 业务层 | Excel、数据库或 HTTP 等来源的文本 | 传给分类器的 `str`，以及对分类结果的后续业务处理 |
+| 业务层 | Excel、数据库或 HTTP 等来源的数据 | 传给包装类的文本或 JSON 对象，以及后续业务处理 |
 | `SemanticClassifier` | `classify(text: str)` | `ClassificationResult` |
+| `ScoreEvaluator` | `evaluate(state)` | `ScoreResult` |
+| `NoulEvaluator` | `evaluate(state)` | `NoulResult` |
 | `JevRuntime` | `DecisionRequest`，包含 `state` 和 `questions` | `JevResponse`，包含 `answers`、`usage`、`model` |
 
 `classify()` 返回的是 `ClassificationResult` 对象，使用 `result.label` 等属性读取字段；调用 `result.to_dict()` 才会转换为字典，使用 `result.to_dict()["label"]` 等方式读取。转换示例：
@@ -283,7 +410,7 @@ print(result.to_dict())
 - `probabilities`：各分类的概率。
 - `fallback`：是否因置信度低于阈值进入待确认状态。
 
-### 三种原语的支持边界
+### 原始请求和响应结构
 
 当前包分为两层：
 
@@ -291,7 +418,7 @@ print(result.to_dict())
 | --- | --- | --- | --- |
 | `JevRuntime.execute()` | 支持 | 支持 | 支持 |
 | `JevResponse.answers` | 返回原始答案 | 返回原始答案 | 返回原始答案 |
-| `SemanticClassifier.classify()` | 已适配 | 未适配 | 未适配 |
+| `SemanticClassifier.classify()` | 已适配 | 不适用 | 不适用 |
 | `ScoreEvaluator.evaluate()` | 不适用 | 已适配 | 不适用 |
 | `NoulEvaluator.evaluate()` | 不适用 | 不适用 | 已适配 |
 | 结果类型 | `ClassificationResult` | `ScoreResult` | `NoulResult` |

@@ -1,0 +1,16 @@
+version: 1
+kind: score
+name: risk_score
+
+input:
+  type: text
+  field: description
+  instructions: Evaluate the operational risk described in the text.
+
+criteria:
+  - 0: No meaningful operational risk
+  - 1: Minor issue with a local impact
+  - 2: Limited impact or workaround available
+  - 3: Material impact requiring prompt action
+  - 4: Major impact across an important workflow
+  - 5: Critical production risk requiring immediate response

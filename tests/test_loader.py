@@ -72,7 +72,76 @@ policy:
 
             definition = load_decision_definition(path)
 
-        self.assertEqual(definition.categories["yes"].description, "Affirmative")
+            self.assertEqual(definition.categories["yes"].description, "Affirmative")
+
+    def test_loads_score_definition(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "risk_score.yaml"
+            path.write_text(
+                """
+version: 1
+kind: score
+name: risk_score
+input:
+  type: text
+  field: description
+  instructions: Score the operational risk from 0 to 5.
+criteria:
+  - 0 = low risk
+  - 5 = high risk
+""",
+                encoding="utf-8",
+            )
+
+            definition = load_decision_definition(path)
+
+            self.assertEqual(definition.kind, "score")
+            self.assertEqual(definition.criteria, ["0 = low risk", "5 = high risk"])
+            self.assertIsNone(definition.categories)
+            self.assertIsNone(definition.policy)
+
+    def test_loads_noul_definition(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "needs_review.yaml"
+            path.write_text(
+                """
+version: 1
+kind: noul
+name: needs_review
+input:
+  type: text
+  field: description
+criteria:
+  true: The case requires human review.
+  false: The case does not require human review.
+""",
+                encoding="utf-8",
+            )
+
+            definition = load_decision_definition(path)
+
+            self.assertEqual(definition.kind, "noul")
+            self.assertEqual(
+                definition.criteria,
+                {
+                    "true": "The case requires human review.",
+                    "false": "The case does not require human review.",
+                },
+            )
+            self.assertIsNone(definition.categories)
+            self.assertIsNone(definition.policy)
+
+    def test_loads_all_repository_primitive_examples(self):
+        repository_root = Path(__file__).parents[1]
+        examples = {
+            "classifier": repository_root / "examples" / "worklog_classifier" / "worklog.yaml",
+            "score": repository_root / "examples" / "score_evaluator" / "risk_score.yaml",
+            "noul": repository_root / "examples" / "noul_evaluator" / "needs_review.yaml",
+        }
+
+        for kind, path in examples.items():
+            with self.subTest(kind=kind):
+                self.assertEqual(load_decision_definition(path).kind, kind)
 
     def test_rejects_unsupported_kind_and_invalid_threshold(self):
         with self.assertRaises(DefinitionError):
