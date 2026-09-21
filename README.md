@@ -1,12 +1,30 @@
-# lvren-jev：基于 Jev 的通用决策库
+# lvren-jev：面向业务应用的 Jev 语义决策 SDK
 
-## 通用决策库
+`lvren-jev` 是一个 Python SDK，用于将 TypeSafe Jev 的分类、评分和条件判断能力接入业务程序。你定义要判断的问题及答案含义，SDK 负责构造请求、调用服务并返回结构化结果，业务代码再据此填写表格、分派工单或触发后续处理。
 
-`lvren-jev` 将文本或应用状态交给 TypeSafe Jev，根据你定义的决策返回分类、评分或条件概率。例如，将“处理生产 Redis 连接异常”归为“运维”，用于自动填写 Excel 工时类型、分派工单或分类邮件。
+## 能力概览
 
-你通过 YAML/JSON 文件描述决策及其含义，通过 Python API 执行判断；Excel、数据库或 HTTP 的读写由业务代码负责。
+| 能力 | 业务示例 | 调用入口 | 返回对象 |
+| --- | --- | --- | --- |
+| Choice 分类 | 判断工时类型、选择工单处理部门 | `SemanticClassifier.classify()` | `ClassificationResult` |
+| Score 评分 | 评估风险、紧急程度或质量等级 | `ScoreEvaluator.evaluate()` | `ScoreResult` |
+| Noul 条件判断 | 判断是否需要人工复核 | `NoulEvaluator.evaluate()` | `NoulResult` |
+| 组合决策 | 一次请求同时判断类别、紧急程度和人工介入需求 | `JevRuntime.execute()` | `JevResponse` |
 
-### 安装
+决策可通过 YAML/JSON 文件维护；运行时统一管理客户端复用、超时、重试、缓存和响应标准化。Excel、数据库、HTTP 等数据读写及后续业务动作由应用负责。
+
+## 阅读导航
+
+- [安装](#安装)
+- [快速上手：填写 Excel 工时类型](#快速上手填写-excel-工时类型)
+- [运行配置](#运行配置)
+- [决策定义与调用](#决策定义与调用)
+- [接口与返回结果](#接口与返回结果)
+- [进阶：一次请求组合多个决策](#进阶一次请求组合多个决策)
+- [源码开发与构建](#源码开发与构建)
+- [许可证](#许可证)
+
+## 安装
 
 PyPI 包名和 Python 导入名不同：
 
@@ -21,16 +39,9 @@ PyPI 包名和 Python 导入名不同：
 python -m pip install lvren-jev
 ```
 
-如果要从源码构建 wheel，先[获取项目](#1-获取项目)，然后在仓库根目录执行：
+安装完成后可直接使用下面的示例；如需从源码构建 wheel，参见[源码开发与构建](#源码开发与构建)。
 
-```powershell
-python -m pip install build
-python -m build --wheel
-# dist 下会生成 lvren_jev-<版本号>-py3-none-any.whl，使用实际生成的文件路径安装。
-python -m pip install .\dist\lvren_jev-0.2.0-py3-none-any.whl
-```
-
-### 最小使用教程
+## 快速上手：填写 Excel 工时类型
 
 以填写 Excel 工时类型为例：`工时.xlsx` 的 `sheet1` 第一行是表头，A 列是工时内容，B 列用于写入工时类型。从第二行开始逐行分类，跳过空内容，完成后保存并关闭文件。
 
@@ -41,7 +52,7 @@ python -m pip install .\dist\lvren_jev-0.2.0-py3-none-any.whl
 
 先在业务脚本的工作目录准备三个文件：
 
-- `worklog.yaml`：告诉 Jev 有哪些工时类型、每个类型的含义，以及低置信度时如何处理。将[下文的 YAML](#按原语分组的决策定义)保存为此文件，或复制仓库的 [`worklog.yaml`](examples/worklog_classifier/worklog.yaml) 示例。
+- `worklog.yaml`：告诉 Jev 有哪些工时类型、每个类型的含义，以及低置信度时如何处理。将[Choice 决策定义](#choice分类)保存为此文件，或复制仓库的 [`worklog.yaml`](examples/worklog_classifier/worklog.yaml) 示例。
 - `typesafe.toml`：告诉运行时使用哪个服务、模型及请求参数。
 - `typesafe.secrets.toml`：保存你的 API Key。
 
@@ -138,37 +149,76 @@ with JevRuntime.from_config("typesafe.toml") as runtime:
 
 `typesafe.toml` 只保存地址、模型和运行参数；API Key 放在同目录的 `typesafe.secrets.toml` 中，并由 `api_key_file` 引用。应用启动时只需保证这两个文件路径正确。
 
-通用层公开对象的关系是：
+## 运行配置
 
-```text
-YAML/JSON
-  -> DecisionDefinition
-  -> SemanticClassifier
-  -> JevRuntime
-  -> ClassificationResult
+### 服务连接与请求参数
+
+通用包最简单的配置形式如下：
+
+```toml
+[typesafe]
+api_key_file = "typesafe.secrets.toml"
+base_url = "https://api.typesafe.ai"
+model = "jev-1.13.0"
+
+[runtime]
+timeout = 30
+retry = 1
+cache = false
 ```
 
-`JevRuntime` 提供可复用的客户端调用、超时、重试、缓存、响应标准化和基础 telemetry；配置错误、调用错误和低置信度回退分别有独立行为。邮件、工时、工单等业务只需替换决策文件和业务适配器，不需要修改通用分类器。
+配置含义：
 
-正式使用时不需要手动创建或替换 `TypeSafeClient`。下面这行会读取配置，并自动创建真实的官方 SDK 客户端：
+- `[typesafe]`：API 地址和模型配置。
+- `api_key_file`：相对于 `typesafe.toml` 的密钥文件路径。
+- `base_url`：TypeSafe API 地址。
+- `model`：使用的 Jev 模型。
+- `[runtime].timeout`：单次请求超时时间，单位为秒。
+- `[runtime].retry`：运行时对可重试连接错误的重试次数。
+- `[runtime].cache`：是否启用相同请求的进程内缓存。
 
-```python
-runtime = JevRuntime.from_config("typesafe.toml")
+### API Key 文件
+
+使用方的 `typesafe.toml` 只保存地址、模型和 Profile，不保存 API Key。首次使用时，在业务项目目录创建 `typesafe.secrets.toml`：
+
+```powershell
+notepad .\typesafe.secrets.toml
 ```
 
-调用链是：
+填入以下内容，并将占位文本替换为官方 API Key：
 
-```text
-typesafe.toml
-  -> JevRuntime.from_config()
-  -> typesafe_sdk.TypeSafeClient
-  -> TypeSafeClient.system_one()
-  -> JevResponse
+```toml
+[typesafe]
+api_key = "替换为你的 TypeSafe API Key"
 ```
 
-## 配置和数据格式
+如果配置了其他 Profile，为其创建对应的密钥文件，内容格式相同。请将 `typesafe.secrets.toml` 和 `typesafe.secrets.*.toml` 加入业务项目的 `.gitignore`；请勿提交真实密钥。
 
-### 按原语分组的决策定义
+### 多来源配置（Profile）
+
+主配置文件是 `typesafe.toml`，通过 Profile 区分不同来源：
+
+```toml
+[typesafe]
+default_profile = "official"
+
+[typesafe.profiles.official]
+api_key_file = "typesafe.secrets.toml"
+base_url = "https://api.typesafe.ai"
+model = "jev-1.13.0"
+
+```
+
+每个 Profile 的 API Key 位于同级独立密钥文件。例如官方 Profile：
+
+```toml
+[typesafe]
+api_key = "替换为你的 API Key"
+```
+
+可新增 `[typesafe.profiles.<名称>]` 配置其他来源，并通过 `default_profile` 选择默认来源。
+
+## 决策定义与调用
 
 决策定义文件描述“要判断什么”以及答案的含义。它属于业务层，由业务方维护；通用包只负责加载、构造原语请求和解析结果，不关心数据来自 Excel、数据库还是 HTTP。
 
@@ -189,7 +239,7 @@ typesafe.toml
 - `input.field`：输入文本在 `state` 中使用的字段名。
 - `input.instructions`：告诉 Jev 如何进行判断的说明。
 
-#### Choice：分类
+### Choice：分类
 
 适合工时分类、工单路由、内容类型识别等“只能选一个类别”的场景。
 
@@ -242,7 +292,7 @@ print(result.value, result.label, result.confidence)
 
 输出 `ClassificationResult`，主要字段为 `value`、`label`、`confidence`、`probabilities` 和 `fallback`。
 
-#### Score：评分
+### Score：评分
 
 适合风险程度、紧急程度、质量等级、影响范围等“从低到高有顺序”的场景。Score 的 `criteria` 必须按从低到高排列；返回的 `score` 可以是两个等级之间的小数。
 
@@ -288,7 +338,7 @@ print(result.score, result.confidence)
 
 输出 `ScoreResult`，主要字段为 `score`、`confidence`、`legend` 和 `probabilities`。
 
-#### Noul：条件判断
+### Noul：条件判断
 
 适合“是否需要人工介入”“是否违反规则”“是否属于高风险”等二元条件判断。Noul 返回的是条件为真的概率，不是绝对布尔值。
 
@@ -331,35 +381,9 @@ print(result.is_true())
 
 输出 `NoulResult`，主要字段为 `probability`。如果业务需要不同阈值，可以调用 `result.is_true(threshold=0.8)`。
 
-### `typesafe.toml`：通用运行时配置
+## 接口与返回结果
 
-通用包最简单的配置形式如下：
-
-```toml
-[typesafe]
-api_key_file = "typesafe.secrets.toml"
-base_url = "https://api.typesafe.ai"
-model = "jev-1.13.0"
-
-[runtime]
-timeout = 30
-retry = 1
-cache = false
-```
-
-配置含义：
-
-- `[typesafe]`：API 地址和模型配置。
-- `api_key_file`：相对于 `typesafe.toml` 的密钥文件路径。
-- `base_url`：TypeSafe API 地址。
-- `model`：使用的 Jev 模型。
-- `[runtime].timeout`：单次请求超时时间，单位为秒。
-- `[runtime].retry`：运行时对可重试连接错误的重试次数。
-- `[runtime].cache`：是否启用相同请求的进程内缓存。
-
-`typesafe.toml` 中也可以使用 `default_profile` 和 `typesafe.profiles.<name>` 管理多个 API 来源，详见[配置](#配置)。
-
-### 分层输入和输出
+### 调用层次
 
 ```text
 业务输入: str 或 JSON 对象
@@ -379,6 +403,8 @@ cache = false
 | `ScoreEvaluator` | `evaluate(state)` | `ScoreResult` |
 | `NoulEvaluator` | `evaluate(state)` | `NoulResult` |
 | `JevRuntime` | `DecisionRequest`，包含 `state` 和 `questions` | `JevResponse`，包含 `answers`、`usage`、`model` |
+
+### 分类结果与字典转换
 
 `classify()` 返回的是 `ClassificationResult` 对象，使用 `result.label` 等属性读取字段；调用 `result.to_dict()` 才会转换为字典，使用 `result.to_dict()["label"]` 等方式读取。转换示例：
 
@@ -408,18 +434,25 @@ print(result.to_dict())
 - `probabilities`：各分类的概率。
 - `fallback`：是否因置信度低于阈值进入待确认状态。
 
-### 原始请求和响应结构
+### 运行时与客户端
 
-当前包分为两层：
+正式使用时不需要手动创建或替换 `TypeSafeClient`。下面这行会读取配置，并自动创建真实的官方 SDK 客户端：
 
-| 接口 | Choice | Score | Noul |
-| --- | --- | --- | --- |
-| `JevRuntime.execute()` | 支持 | 支持 | 支持 |
-| `JevResponse.answers` | 返回原始答案 | 返回原始答案 | 返回原始答案 |
-| `SemanticClassifier.classify()` | 已适配 | 不适用 | 不适用 |
-| `ScoreEvaluator.evaluate()` | 不适用 | 已适配 | 不适用 |
-| `NoulEvaluator.evaluate()` | 不适用 | 不适用 | 已适配 |
-| 结果类型 | `ClassificationResult` | `ScoreResult` | `NoulResult` |
+```python
+runtime = JevRuntime.from_config("typesafe.toml")
+```
+
+调用链是：
+
+```text
+typesafe.toml
+  -> JevRuntime.from_config()
+  -> typesafe_sdk.TypeSafeClient
+  -> TypeSafeClient.system_one()
+  -> JevResponse
+```
+
+## 进阶：一次请求组合多个决策
 
 `JevRuntime` 使用通用的 `DecisionRequest`，可以在一次请求中组合三种原语：
 
@@ -469,35 +502,11 @@ runtime.close()
 - `Score`：`criteria` 是从低到高排列的描述数组；返回 `score`、`confidence`、`legend` 和 `probabilities`。`score` 可以是小数。
 - `Noul`：`criteria` 可选，描述 `true` 和 `false`；返回 `noul`，范围为 `0` 到 `1`，表示回答为“是”的概率。Noul 没有单独的 `confidence` 字段。
 
-如果只需要一次请求执行多个不同原语，仍可直接使用 `JevRuntime.execute()`；如果每次只处理一种原语，推荐使用统一包装模块中的对应类：
+每次只处理一种决策时，可使用前文的 `SemanticClassifier`、`ScoreEvaluator` 或 `NoulEvaluator`；需要组合多个问题时，直接构造 `DecisionRequest`。
 
-```python
-from lvren_jev import NoulEvaluator, ScoreEvaluator
+## 源码开发与构建
 
-score_evaluator = ScoreEvaluator(
-    name="risk_score",
-    criteria=["0 = low", "5 = high"],
-    runtime=runtime,
-)
-score = score_evaluator.evaluate({"message": "Repeated payment failures"})
-print(score.score, score.confidence)
-
-noul_evaluator = NoulEvaluator(
-    name="needs_review",
-    criteria="Determine whether this case requires human review.",
-    runtime=runtime,
-)
-needs_review = noul_evaluator.evaluate({"message": "Suspicious transaction"})
-print(needs_review.probability, needs_review.is_true())
-```
-
-三个原语包装类都位于 `lvren_jev.decision` 模块，并且共享同一个 `JevRuntime`。固定类别分类使用 `SemanticClassifier`，评分使用 `ScoreEvaluator`，真假概率判断使用 `NoulEvaluator`。
-
-本项目采用 [MIT License](LICENSE)。`typesafe-sdk`、TypeSafe API 和 Jev 模型属于第三方服务或依赖，分别遵循其自身的许可证、服务条款和使用限制。
-
-## 环境准备
-
-以下命令以 Windows PowerShell 为例。项目要求 Python 3.11 或更高版本，因为代码使用了内置 `tomllib` 和现代类型语法。
+以下步骤适用于修改源码、运行测试或构建安装包，在仓库根目录执行命令。
 
 ### 1. 获取项目
 
@@ -532,24 +541,7 @@ Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
 .\.venv\Scripts\Activate.ps1
 ```
 
-### 3. 创建本地 API Key 文件
-
-使用方的 `typesafe.toml` 只保存地址、模型和 Profile，不保存 API Key。首次使用时，在业务项目目录创建 `typesafe.secrets.toml`：
-
-```powershell
-notepad .\typesafe.secrets.toml
-```
-
-填入以下内容，并将占位文本替换为官方 API Key：
-
-```toml
-[typesafe]
-api_key = "替换为你的 TypeSafe API Key"
-```
-
-如果配置了其他 Profile，为其创建对应的密钥文件，内容格式相同。请将 `typesafe.secrets.toml` 和 `typesafe.secrets.*.toml` 加入业务项目的 `.gitignore`；请勿提交真实密钥。
-
-### 4. 检查安装
+### 3. 检查安装
 
 ```powershell
 python -c "import lvren_jev; print('lvren-jev', lvren_jev.__version__)"
@@ -557,36 +549,21 @@ python -c "import lvren_jev; print('lvren-jev', lvren_jev.__version__)"
 
 正常情况下会显示已安装的 `lvren-jev` 版本。
 
-### 5. 运行测试
+### 4. 运行测试
 
 ```powershell
 python -m unittest discover -s tests -v
 ```
 
-## 配置
-
-主配置文件是 `typesafe.toml`，通过 Profile 区分不同来源：
-
-```toml
-[typesafe]
-default_profile = "official"
-
-[typesafe.profiles.official]
-api_key_file = "typesafe.secrets.toml"
-base_url = "https://api.typesafe.ai"
-model = "jev-1.13.0"
-
-```
-
-每个 Profile 的 API Key 位于同级独立密钥文件。例如官方 Profile：
-
-```toml
-[typesafe]
-api_key = "替换为你的 API Key"
-```
-
-## 测试
+### 5. 构建并安装 wheel
 
 ```powershell
-python -m unittest discover -s tests -v
+python -m pip install build
+python -m build --wheel
+# dist 下会生成 lvren_jev-<版本号>-py3-none-any.whl，使用实际生成的文件路径安装。
+python -m pip install .\dist\lvren_jev-0.2.0-py3-none-any.whl
 ```
+
+## 许可证
+
+本项目采用 [MIT License](LICENSE)。`typesafe-sdk`、TypeSafe API 和 Jev 模型属于第三方服务或依赖，分别遵循其自身的许可证、服务条款和使用限制。
