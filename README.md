@@ -45,20 +45,25 @@
 
 ## 安装
 
-PyPI 包名和 Python 导入名不同：
+需要 Python 3.11 或更高版本，安装后使用 `import lvren_jev` 导入。
 
-- 安装包名：`lvren-jev`
-- 导入名：`lvren_jev`
+### 从仓库安装
 
-需要 Python 3.11 或更高版本，以及可用的 TypeSafe API Key 和网络连接。以下命令以 Windows PowerShell 为例。
+下载仓库源码后，在仓库根目录安装：
 
-从 PyPI 安装（无需下载仓库）：
+```powershell
+git clone https://github.com/BlueLvRen/lvren-jev.git lvren_jev
+cd lvren_jev
+python -m pip install .
+```
+
+### 从 PyPI 安装
+
+安装已发布的版本，无需下载仓库：
 
 ```powershell
 python -m pip install lvren-jev
 ```
-
-安装完成后可直接使用下面的示例；如需从源码构建 wheel，参见[源码开发与构建](#源码开发与构建)。
 
 ## 快速上手：填写 Excel 工时类型
 
