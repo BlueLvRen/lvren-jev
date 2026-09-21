@@ -205,7 +205,7 @@ cache = false
 
 ### API Key 文件
 
-使用方的 `typesafe.toml` 只保存地址、模型和 Profile，不保存 API Key。首次使用时，在业务项目目录创建 `typesafe.secrets.toml`：
+将 API Key 保存在与 `typesafe.toml` 同目录的 `typesafe.secrets.toml` 中：
 
 ```powershell
 notepad .\typesafe.secrets.toml
@@ -218,7 +218,7 @@ notepad .\typesafe.secrets.toml
 api_key = "替换为你的 TypeSafe API Key"
 ```
 
-如果配置了其他 Profile，为其创建对应的密钥文件，内容格式相同。请将 `typesafe.secrets.toml` 和 `typesafe.secrets.*.toml` 加入业务项目的 `.gitignore`；请勿提交真实密钥。
+如果配置了其他 Profile，为其创建对应的密钥文件，内容格式相同。
 
 ### 多来源配置（Profile）
 
